@@ -1,0 +1,12 @@
+{
+  "name": "navine-uv-proxy",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "@tomphttp/bare-server-node": "^2.0.5"
+  }
+}
