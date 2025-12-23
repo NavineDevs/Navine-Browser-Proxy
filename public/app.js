@@ -1,73 +1,104 @@
+// ================================
+// Ultraviolet Service Worker
+// ================================
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/uv/uv.sw.js", { scope: "/service/" })
+    .then(() => console.log("✅ UV Service Worker registered"))
+    .catch(err => console.error("❌ UV SW failed:", err));
+}
+
+// ================================
+// Elements
+// ================================
 const frame = document.getElementById("browser");
 const input = document.getElementById("urlInput");
 const tabsEl = document.getElementById("tabs");
+const goBtn = document.getElementById("goBtn");
+const newTabBtn = document.getElementById("newTab");
 
+// ================================
+// State
+// ================================
 let tabs = [];
-let activeTab = null;
+let activeTabId = null;
 
-function uv(url) {
+// ================================
+// Helpers
+// ================================
+function uvEncode(url) {
   return __uv$config.prefix + __uv$config.encodeUrl(url);
 }
 
-function isURL(text) {
-  return /^https?:\/\//i.test(text) || /\./.test(text);
+function isLikelyUrl(value) {
+  return /^https?:\/\//i.test(value) || /\./.test(value);
 }
 
-function createTab(url = "") {
+function normalizeInput(value) {
+  value = value.trim();
+  if (!value) return "";
+
+  if (isLikelyUrl(value)) {
+    if (!/^https?:\/\//i.test(value)) {
+      return "https://" + value;
+    }
+    return value;
+  }
+
+  return "https://www.google.com/search?q=" + encodeURIComponent(value);
+}
+
+function getActiveTab() {
+  return tabs.find(t => t.id === activeTabId);
+}
+
+// ================================
+// Tabs
+// ================================
+function createTab() {
   const tab = {
-    id: Date.now().toString(16),
+    id: crypto.randomUUID(),
     title: "New Tab",
-    input: url,
+    input: "",
     proxied: ""
   };
   tabs.push(tab);
-  switchTab(tab.id);
+  setActiveTab(tab.id);
 }
 
 function closeTab(id) {
-  const i = tabs.findIndex(t => t.id === id);
-  if (i === -1) return;
-  tabs.splice(i, 1);
+  const index = tabs.findIndex(t => t.id === id);
+  if (index === -1) return;
+
+  tabs.splice(index, 1);
 
   if (!tabs.length) {
     createTab();
+    return;
+  }
+
+  if (id === activeTabId) {
+    const next = tabs[Math.max(0, index - 1)];
+    setActiveTab(next.id);
   } else {
-    switchTab(tabs[Math.max(0, i - 1)].id);
+    renderTabs();
   }
 }
 
-function switchTab(id) {
-  activeTab = tabs.find(t => t.id === id);
+function setActiveTab(id) {
+  activeTabId = id;
+  const tab = getActiveTab();
   renderTabs();
 
-  input.value = activeTab.input;
-  frame.src = activeTab.proxied || "";
-}
-
-function navigate() {
-  if (!activeTab) return;
-
-  let value = input.value.trim();
-  if (!value) return;
-
-  let url = isURL(value)
-    ? value.startsWith("http") ? value : "https://" + value
-    : "https://www.google.com/search?q=" + encodeURIComponent(value);
-
-  activeTab.input = value;
-  activeTab.proxied = uv(url);
-  activeTab.title = url;
-
-  frame.src = activeTab.proxied;
-  renderTabs();
+  input.value = tab.input;
+  frame.src = tab.proxied || "";
 }
 
 function renderTabs() {
   tabsEl.innerHTML = "";
 
-  tabs.forEach(tab => {
+  for (const tab of tabs) {
     const el = document.createElement("div");
-    el.className = "tab" + (tab === activeTab ? " active" : "");
+    el.className = "tab" + (tab.id === activeTabId ? " active" : "");
 
     const title = document.createElement("span");
     title.textContent = tab.title;
@@ -79,29 +110,60 @@ function renderTabs() {
       closeTab(tab.id);
     };
 
-    el.onclick = () => switchTab(tab.id);
+    el.onclick = () => setActiveTab(tab.id);
 
     el.append(title, close);
     tabsEl.appendChild(el);
-  });
+  }
 }
 
-document.getElementById("goBtn").onclick = navigate;
-document.getElementById("newTab").onclick = () => createTab();
+// ================================
+// Navigation
+// ================================
+function navigate() {
+  const tab = getActiveTab();
+  if (!tab) return;
 
+  const raw = input.value.trim();
+  if (!raw) return;
+
+  const url = normalizeInput(raw);
+  const proxied = uvEncode(url);
+
+  tab.input = raw;
+  tab.proxied = proxied;
+  tab.title = url;
+
+  frame.src = proxied;
+  renderTabs();
+}
+
+goBtn.onclick = navigate;
 input.addEventListener("keydown", e => {
   if (e.key === "Enter") navigate();
 });
 
+newTabBtn.onclick = () => createTab();
+
+// ================================
+// Update tab title on load
+// ================================
 frame.addEventListener("load", () => {
   try {
-    const title = frame.contentDocument.title;
+    const title = frame.contentDocument?.title;
     if (title) {
-      activeTab.title = title;
-      renderTabs();
+      const tab = getActiveTab();
+      if (tab) {
+        tab.title = title;
+        renderTabs();
+      }
     }
-  } catch {}
+  } catch {
+    // Cross-origin blocked — ignore
+  }
 });
 
+// ================================
 // Init
+// ================================
 createTab();
