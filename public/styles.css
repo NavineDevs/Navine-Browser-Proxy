@@ -1,40 +1,92 @@
+* {
+  box-sizing: border-box;
+  font-family: system-ui, sans-serif;
+}
+
 body {
   margin: 0;
   background: #05070d;
   color: #e8ecff;
-  font-family: system-ui;
 }
 
-header {
+.topbar {
   display: flex;
-  justify-content: space-between;
-  padding: 12px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
   background: #0a0f1f;
   border-bottom: 1px solid #121a3a;
 }
 
-.logo {
-  color: #1f4fff;
-  font-weight: bold;
+.brand {
   font-size: 20px;
-  text-shadow: 0 0 6px #1f4fff;
+  font-weight: 800;
+  color: #1f4fff;
+  text-shadow: 0 0 6px rgba(31,79,255,.6);
 }
 
-.bar {
+.tabs {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+  overflow-x: auto;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #0d1430;
+  border: 1px solid #121a3a;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tab.active {
+  border-color: #1f4fff;
+  box-shadow: 0 0 8px rgba(31,79,255,.6);
+}
+
+.tab span {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab button {
+  background: none;
+  border: none;
+  color: #e8ecff;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.controls button {
+  background: #1f4fff;
+  border: none;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.omnibox {
   display: flex;
   padding: 10px;
   background: #0d1430;
 }
 
-input {
+.omnibox input {
   flex: 1;
   padding: 10px;
   background: #060b1a;
-  color: white;
   border: 1px solid #121a3a;
+  color: white;
 }
 
-button {
+.omnibox button {
   margin-left: 8px;
   background: #1f4fff;
   border: none;
