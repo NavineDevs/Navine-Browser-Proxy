@@ -1,21 +1,13 @@
 const express = require('express');
 const path = require('path');
-const fs = require('fs');
 const { createBareServer } = require('@tomphttp/bare-server-node');
 const { uvPath } = require('@titaniumnetwork-dev/ultraviolet');
-const http = require('http');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// Create HTTP server
-const server = http.createServer(app);
-
 // Create bare server
-const bareServer = createBareServer('/bare/', {
-  http: server,
-  wss: server
-});
+const bareServer = createBareServer('/bare/');
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
@@ -26,225 +18,184 @@ app.use('/uv', express.static(uvPath));
 // Handle bare server requests
 app.use((req, res, next) => {
   if (req.url.startsWith('/bare/')) {
-    console.log('Bare server request:', req.url);
-    bareServer.routeRequest(req, res);
+    bareServer.handleRequest(req, res);
   } else {
     next();
   }
 });
 
-// SIMPLE PROXY ENDPOINT - Works every time
-app.get('/proxy/*', (req, res) => {
-  const encoded = req.params[0];
-  let url;
-  
-  try {
-    url = atob(encoded);
-  } catch {
-    url = 'https://www.google.com';
-  }
-  
-  console.log('Simple proxy for:', url);
-  
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>${new URL(url).hostname}</title>
-      <style>
-        body, html { margin: 0; padding: 0; overflow: hidden; height: 100%; }
-        iframe { width: 100%; height: 100%; border: none; }
-      </style>
-    </head>
-    <body>
-      <iframe 
-        src="${url}"
-        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
-        allow="fullscreen"
-        referrerpolicy="no-referrer">
-      </iframe>
-    </body>
-    </html>
-  `);
-});
-
-// UV SERVICE ENDPOINT - Simplified
+// UV SERVICE ENDPOINT - This is the main UV proxy
 app.get('/uv/service/*', (req, res) => {
-  const encoded = req.params[0];
+  // Decode the URL parameter once
+  const encoded = decodeURIComponent(req.params[0]);
   
-  console.log('UV service request');
+  console.log('UV service for encoded:', encoded.substring(0, 50));
   
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <base href="/uv/service/" />
-      <title>UV Proxy</title>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      
-      <!-- Load UV bundle -->
-      <script src="/uv/uv.bundle.js"></script>
-      
-      <style>
-        body {
-          margin: 0;
-          padding: 20px;
-          font-family: Arial, sans-serif;
-          background: #f5f5f5;
-        }
-        .container {
-          max-width: 600px;
-          margin: 50px auto;
-          background: white;
-          padding: 30px;
-          border-radius: 10px;
-          box-shadow: 0 2px 20px rgba(0,0,0,0.1);
-          text-align: center;
-        }
-        .status {
-          color: #666;
-          margin: 20px 0;
-        }
-        .error {
-          color: #d32f2f;
-          background: #ffebee;
-          padding: 20px;
-          border-radius: 5px;
-          margin: 20px 0;
-        }
-        iframe {
-          width: 100%;
-          height: 80vh;
-          border: none;
-          border-radius: 5px;
-          margin-top: 20px;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <h2>🔗 UV Proxy</h2>
-        <div id="content">
-          <p class="status" id="status">Initializing UV...</p>
-          <div id="details"></div>
-        </div>
-        <iframe id="uvFrame" style="display: none;"></iframe>
-      </div>
-      
-      <script>
-        (function() {
-          const statusEl = document.getElementById('status');
-          const detailsEl = document.getElementById('details');
-          const uvFrame = document.getElementById('uvFrame');
-          
-          function updateStatus(msg, detail = '') {
-            statusEl.textContent = msg;
-            if (detail) {
-              detailsEl.innerHTML = '<p><small>' + detail + '</small></p>';
-            }
+  // Serve UV client page
+  const html = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <base href="/uv/service/" />
+    <title>UV Proxy</title>
+    <meta charset="UTF-8">
+    
+    <!-- UV Configuration -->
+    <script>
+      // Set UV config BEFORE loading UV scripts
+      window.__uv$config = {
+        prefix: '/uv/service/',
+        bare: '/bare/',
+        encodeUrl: Ultraviolet.codec.xor.encode,
+        decodeUrl: Ultraviolet.codec.xor.decode,
+        handler: '/uv/uv.handler.js',
+        bundle: '/uv/uv.bundle.js',
+        config: '/uv/uv.config.js',
+        client: '/uv/uv.client.js',
+        sw: '/uv/uv.sw.js'
+      };
+    </script>
+    
+    <!-- Load UV scripts -->
+    <script src="/uv/uv.bundle.js"></script>
+    <script src="/uv/uv.config.js"></script>
+    <script src="/uv/uv.client.js"></script>
+    
+    <style>
+      body {
+        margin: 0;
+        padding: 20px;
+        font-family: Arial, sans-serif;
+        background: #1a1a1a;
+        color: white;
+        height: 100vh;
+        overflow: hidden;
+      }
+      #uv-error {
+        background: #ff4444;
+        color: white;
+        padding: 20px;
+        margin: 20px;
+        border-radius: 5px;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="uv-error"></div>
+    <div id="content">Loading UV proxy...</div>
+    
+    <script>
+      (async function() {
+        try {
+          // Wait for UV to load
+          while (!window.__uv$config || !window.Ultraviolet) {
+            await new Promise(r => setTimeout(r, 100));
           }
           
-          function showError(error) {
-            document.getElementById('content').innerHTML = 
-              '<div class="error">' +
-              '<h3>Proxy Error</h3>' +
-              '<p>' + error + '</p>' +
-              '<p><a href="/" style="color: #1a73e8;">← Return to browser</a></p>' +
-              '</div>';
-          }
+          // Get encoded URL from path
+          const path = window.location.pathname;
+          const prefix = '/uv/service/';
+          const encodedUrl = path.substring(prefix.length);
           
-          // Wait for UV
-          function waitForUV(callback) {
-            if (window.Ultraviolet && window.Ultraviolet.codec) {
-              callback();
-            } else {
-              setTimeout(() => waitForUV(callback), 100);
-            }
-          }
+          console.log('Encoded URL:', encodedUrl);
           
-          waitForUV(function() {
+          // Decode URL
+          const decodedUrl = __uv$config.decodeUrl(encodedUrl);
+          console.log('Decoded URL:', decodedUrl);
+          
+          // Create UV instance
+          const uv = new UVServiceWorker();
+          
+          // Register service worker
+          if ('serviceWorker' in navigator) {
             try {
-              updateStatus('UV loaded, decoding URL...');
-              
-              // Get encoded URL from path
-              const currentPath = window.location.pathname;
-              const prefix = '/uv/service/';
-              
-              if (!currentPath.startsWith(prefix)) {
-                throw new Error('Invalid UV path');
-              }
-              
-              const encodedUrl = currentPath.substring(prefix.length);
-              console.log('Encoded from path:', encodedUrl);
-              
-              // Create simple UV config
-              const uvConfig = {
-                prefix: prefix,
-                bare: '/bare/',
-                encodeUrl: Ultraviolet.codec.xor.encode,
-                decodeUrl: Ultraviolet.codec.xor.decode
-              };
-              
-              // Decode the URL
-              const decodedUrl = uvConfig.decodeUrl(encodedUrl);
-              console.log('Decoded URL:', decodedUrl);
-              
-              updateStatus('Loading content...', 'via ' + decodedUrl);
-              
-              // Use iframe to load content (simplest approach)
-              uvFrame.style.display = 'block';
-              uvFrame.src = decodedUrl;
-              
-              // Update status when iframe loads
-              uvFrame.onload = function() {
-                statusEl.textContent = 'Content loaded';
-                statusEl.style.color = '#4caf50';
-              };
-              
-              uvFrame.onerror = function() {
-                showError('Failed to load content. The site may be blocking iframes.');
-              };
-              
-            } catch(error) {
-              console.error('UV error:', error);
-              showError('Setup failed: ' + error.message);
+              await navigator.serviceWorker.register('/uv/uv.sw.js', {
+                scope: __uv$config.prefix
+              });
+              console.log('Service Worker registered');
+            } catch (e) {
+              console.warn('Service Worker registration failed:', e);
             }
-          });
-        })();
-      </script>
-    </body>
-    </html>
-  `);
+          }
+          
+          // Mount UV
+          await uv.mount();
+          
+          // Navigate to the URL
+          const result = await uv.fetch(decodedUrl);
+          
+          if (result.ok) {
+            const html = await result.text();
+            const rewritten = uv.rewriteHtml(html);
+            document.open();
+            document.write(rewritten);
+            document.close();
+          } else {
+            throw new Error('Failed to fetch: ' + result.status);
+          }
+          
+        } catch (error) {
+          console.error('UV Error:', error);
+          document.getElementById('uv-error').style.display = 'block';
+          document.getElementById('uv-error').innerHTML = 
+            '<h3>UV Proxy Error</h3>' +
+            '<p>' + error.message + '</p>' +
+            '<p><a href="/" style="color: white; text-decoration: underline;">Return to browser</a></p>';
+          document.getElementById('content').innerHTML = '';
+        }
+      })();
+    </script>
+  </body>
+  </html>
+  `;
+  
+  res.send(html);
 });
 
 // Health check
 app.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'OK',
-    service: 'Navine Browser',
+    service: 'UV Proxy',
     timestamp: new Date().toISOString()
   });
 });
 
-// Test endpoints
-app.get('/test-proxy', (req, res) => {
-  const url = req.query.url || 'https://www.google.com';
-  const encoded = btoa(url);
-  
-  res.redirect(`/proxy/${encoded}`);
-});
-
+// Test UV directly
 app.get('/test-uv', (req, res) => {
   const url = req.query.url || 'https://www.google.com';
   
-  if (window.Ultraviolet) {
-    const encoded = Ultraviolet.codec.xor.encode(url);
-    res.redirect(`/uv/service/${encoded}`);
-  } else {
-    const encoded = btoa(url);
-    res.redirect(`/proxy/${encoded}`);
-  }
+  const html = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Test UV</title>
+    <script>
+      // Load UV
+      const uvScript = document.createElement('script');
+      uvScript.src = '/uv/uv.bundle.js';
+      uvScript.onload = function() {
+        const configScript = document.createElement('script');
+        configScript.src = '/uv/uv.config.js';
+        configScript.onload = function() {
+          if (window.Ultraviolet && window.Ultraviolet.codec) {
+            const encoded = Ultraviolet.codec.xor.encode('${url}');
+            window.location.href = '/uv/service/' + encoded;
+          }
+        };
+        document.head.appendChild(configScript);
+      };
+      document.head.appendChild(uvScript);
+    </script>
+  </head>
+  <body>
+    Testing UV redirect to ${url}...
+  </body>
+  </html>
+  `;
+  
+  res.send(html);
 });
 
 // Main page
@@ -253,13 +204,14 @@ app.get('/', (req, res) => {
 });
 
 // Start server
-server.listen(PORT, () => {
+app.listen(PORT, () => {
   console.log(`
-✅ Navine Browser Running
+========================================
+🚀 UV Proxy Server
 📍 Port: ${PORT}
-📡 Proxy: /proxy/
 🔗 UV Service: /uv/service/
-🧪 Test Proxy: http://localhost:${PORT}/test-proxy?url=https://google.com
-🏠 Main: http://localhost:${PORT}
+🧪 Test: http://localhost:${PORT}/test-uv?url=https://google.com
+🏠 Browser: http://localhost:${PORT}
+========================================
   `);
 });
