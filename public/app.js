@@ -1,4 +1,4 @@
-// public/app.js - Fixed to use /uv/service/
+// public/app.js - Simple working version using iframe proxy
 const urlInput = document.getElementById("urlInput");
 const goBtn = document.getElementById("goBtn");
 const iframe = document.getElementById("browser");
@@ -8,48 +8,18 @@ const newTabBtn = document.getElementById("newTab");
 let tabs = [];
 let currentTabId = null;
 
-// Initialize UV
-function initUV() {
-  if (!window.Ultraviolet) {
-    console.error('Ultraviolet not loaded');
-    return false;
-  }
-  
-  // Create custom UV config
-  window.__uv$config = {
-    prefix: '/uv/service/',
-    bare: '/bare/',
-    encodeUrl: Ultraviolet.codec.xor.encode,
-    decodeUrl: Ultraviolet.codec.xor.decode,
-    handler: '/uv/uv.handler.js',
-    bundle: '/uv/uv.bundle.js',
-    config: '/uv/uv.config.js',
-    client: '/uv/uv.client.js',
-    sw: '/uv/uv.sw.js'
-  };
-  
-  return true;
-}
-
-// Initialize app
 function init() {
-  // Initialize UV config
-  if (!initUV()) {
-    alert('Ultraviolet proxy not loaded. Please refresh the page.');
-    return;
-  }
-  
   // Create first tab
   createTab();
   
-  // Set up event listeners
+  // Event listeners
   goBtn.addEventListener("click", navigate);
   urlInput.addEventListener("keydown", e => {
     if (e.key === "Enter") navigate();
   });
   newTabBtn.addEventListener("click", () => createTab());
   
-  // Add quick nav
+  // Add quick nav buttons
   addQuickNav();
 }
 
@@ -59,7 +29,6 @@ function navigate() {
   
   let url;
   try {
-    // Try to parse as URL
     if (!raw.startsWith('http://') && !raw.startsWith('https://')) {
       if (raw.includes('.') && !raw.includes(' ')) {
         url = 'https://' + raw;
@@ -70,40 +39,26 @@ function navigate() {
       url = raw;
     }
     
-    // Validate URL
+    // Validate
     new URL(url);
-  } catch (error) {
-    alert('Invalid URL: ' + error.message);
+  } catch {
+    alert('Invalid URL');
     return;
   }
   
   console.log('Navigating to:', url);
   
-  try {
-    // Encode URL using UV
-    const encoded = Ultraviolet.codec.xor.encode(url);
-    const proxiedUrl = '/uv/service/' + encoded;
-    
-    console.log('Proxied URL:', proxiedUrl);
-    
-    // Load in iframe
-    iframe.src = proxiedUrl;
-    
-    // Update current tab
-    if (currentTabId) {
-      const tab = tabs.find(t => t.id === currentTabId);
-      if (tab) {
-        tab.url = url;
-        tab.proxiedUrl = proxiedUrl;
-        updateTabDisplay(tab);
-      }
+  // Use the /frame endpoint with corsproxy.io
+  const proxiedUrl = `/frame?url=${encodeURIComponent(url)}`;
+  iframe.src = proxiedUrl;
+  
+  // Update current tab
+  if (currentTabId) {
+    const tab = tabs.find(t => t.id === currentTabId);
+    if (tab) {
+      tab.url = url;
+      updateTabDisplay(tab);
     }
-  } catch (error) {
-    console.error('Navigation error:', error);
-    alert('Error: ' + error.message);
-    
-    // Fallback to /go route
-    iframe.src = '/go?url=' + encodeURIComponent(url);
   }
 }
 
@@ -150,12 +105,7 @@ function switchTab(tabId) {
   
   // Update iframe
   if (tab.url !== 'about:blank') {
-    try {
-      const encoded = Ultraviolet.codec.xor.encode(tab.url);
-      iframe.src = '/uv/service/' + encoded;
-    } catch (error) {
-      iframe.src = '/go?url=' + encodeURIComponent(tab.url);
-    }
+    iframe.src = `/frame?url=${encodeURIComponent(tab.url)}`;
   } else {
     iframe.src = '';
   }
@@ -181,7 +131,7 @@ function updateTabDisplay(tab) {
         displayText = displayText.substring(0, 12) + '...';
       }
     } catch {
-      displayText = tab.url.length > 15 ? tab.url.substring(0, 12) + '...' : tab.url;
+      displayText = 'Page';
     }
   }
   
@@ -212,10 +162,10 @@ function addQuickNav() {
   const quickNav = document.createElement('div');
   quickNav.className = 'quick-nav';
   quickNav.innerHTML = `
-    <button onclick="quickNavigate('https://www.google.com')">Google</button>
-    <button onclick="quickNavigate('https://www.wikipedia.org')">Wikipedia</button>
-    <button onclick="quickNavigate('https://www.youtube.com')">YouTube</button>
-    <button onclick="quickNavigate('https://example.com')">Example</button>
+    <button onclick="quickGo('https://www.google.com')">Google</button>
+    <button onclick="quickGo('https://www.wikipedia.org')">Wikipedia</button>
+    <button onclick="quickGo('https://www.youtube.com')">YouTube</button>
+    <button onclick="quickGo('https://example.com')">Example</button>
   `;
   
   const omnibox = document.querySelector('.omnibox');
@@ -224,17 +174,14 @@ function addQuickNav() {
   }
 }
 
-function quickNavigate(url) {
+function quickGo(url) {
   urlInput.value = url;
   navigate();
 }
 
-// Start when page loads
+// Initialize
 document.addEventListener('DOMContentLoaded', init);
 
-// Make functions available globally
+// Global functions
+window.quickGo = quickGo;
 window.navigate = navigate;
-window.quickNavigate = quickNavigate;
-window.createTab = createTab;
-window.switchTab = switchTab;
-window.closeTab = closeTab;
