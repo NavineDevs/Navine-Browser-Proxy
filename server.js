@@ -1,20 +1,24 @@
 const express = require("express");
-const ultraviolet = require("@titaniumnetwork-dev/ultraviolet");
+const ultravioletModule = require("@titaniumnetwork-dev/ultraviolet");
 const { createBareServer } = require("@tomphttp/bare-server-node");
 
-// Log the export of ultraviolet to determine how to import it correctly
-console.log(require("@titaniumnetwork-dev/ultraviolet"));
+// Debug: log the module to see its structure
+console.log("Ultraviolet module export:", ultravioletModule);
+
+// Assuming the module has a method 'createUltraviolet' or similar
+// You need to adjust this based on the actual exported structure
+// First, check if there's a method
+const createUltraviolet = ultravioletModule.createUltraviolet || ultravioletModule.default || ultravioletModule;
+
+// Initialize ultraviolet
+const uv = createUltraviolet({
+  prefix: "/uv/",
+  bare: "/bare/"
+});
 
 const app = express();
 
 const bare = createBareServer("/bare/");
-
-// Initialize Ultraviolet
-// (Update this part after seeing the console output)
-const uv = ultraviolet({
-  prefix: "/uv/",
-  bare: "/bare/"
-});
 
 // Route Bare traffic
 app.use((req, res, next) => {
