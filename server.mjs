@@ -3,16 +3,16 @@ import ultraviolet from "@titaniumnetwork-dev/ultraviolet";
 
 const app = express();
 
-// Create UV server using the factory
-const uv = ultraviolet.createServer({
+// Ultraviolet exposes a middleware factory, NOT a class
+const uvMiddleware = ultraviolet({
   prefix: "/uv/",
   bare: "/bare/"
 });
 
 // Mount Ultraviolet
-app.use("/uv/", uv);
+app.use("/uv/", uvMiddleware);
 
-// Static frontend
+// Serve static files
 app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
