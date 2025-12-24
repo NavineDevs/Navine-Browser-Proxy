@@ -1,4 +1,4 @@
-// public/app.js - Updated version
+// public/app.js - Fixed navigation
 const urlInput = document.getElementById("urlInput");
 const goBtn = document.getElementById("goBtn");
 const iframe = document.getElementById("browser");
@@ -8,19 +8,14 @@ const newTabBtn = document.getElementById("newTab");
 let tabs = [];
 let currentTabId = null;
 
-// Initialize UV if available
-let uvConfig = null;
-if (window.__uv$config) {
-  uvConfig = window.__uv$config;
-} else {
-  console.warn('UV config not loaded, fetching...');
-  fetch('/uv-config')
-    .then(res => res.json())
-    .then(config => {
-      uvConfig = config;
-      console.log('UV config loaded:', config);
-    })
-    .catch(err => console.error('Failed to load UV config:', err));
+// Check if UV is loaded
+function checkUV() {
+  if (!window.__uv$config) {
+    console.error('UV not loaded! Check if /uv/ files are accessible.');
+    alert('Ultraviolet proxy not loaded. Please refresh the page.');
+    return false;
+  }
+  return true;
 }
 
 function isUrl(value) {
@@ -42,33 +37,36 @@ function formatInput(input) {
 }
 
 function navigate() {
-  if (!uvConfig) {
-    alert("Ultraviolet not loaded. Please wait...");
-    return;
-  }
-
+  if (!checkUV()) return;
+  
   const raw = urlInput.value.trim();
   if (!raw) return;
-
+  
   const target = formatInput(raw);
   
-  // Encode URL for UV
-  const encoded = uvConfig.encodeUrl(target);
-  const proxiedUrl = uvConfig.prefix + encoded;
-  
-  console.log('Navigating to:', target, 'via:', proxiedUrl);
-  
-  // Update iframe
-  iframe.src = proxiedUrl;
-  
-  // Update current tab
-  if (currentTabId) {
-    const tab = tabs.find(t => t.id === currentTabId);
-    if (tab) {
-      tab.url = target;
-      tab.proxiedUrl = proxiedUrl;
-      updateTabDisplay(tab);
+  try {
+    // Use UV to encode the URL
+    const encoded = __uv$config.encodeUrl(target);
+    const proxiedUrl = __uv$config.prefix + encoded;
+    
+    console.log('Navigating to:', target);
+    console.log('Proxied URL:', proxiedUrl);
+    
+    // Load in iframe
+    iframe.src = proxiedUrl;
+    
+    // Update current tab
+    if (currentTabId) {
+      const tab = tabs.find(t => t.id === currentTabId);
+      if (tab) {
+        tab.url = target;
+        tab.proxiedUrl = proxiedUrl;
+        updateTabDisplay(tab);
+      }
     }
+  } catch (error) {
+    console.error('Navigation error:', error);
+    alert('Error navigating: ' + error.message);
   }
 }
 
@@ -97,7 +95,6 @@ function createTab(url = 'about:blank') {
   const tab = {
     id: tabId,
     button: tabBtn,
-    closeBtn: closeBtn,
     container: tabDiv,
     url: url,
     proxiedUrl: url,
@@ -129,9 +126,17 @@ function switchTab(tabId) {
 }
 
 function updateTabDisplay(tab) {
-  const displayText = tab.title.length > 20 
-    ? tab.title.substring(0, 17) + '...' 
-    : tab.title;
+  let displayText = tab.title;
+  
+  if (tab.url !== 'about:blank') {
+    try {
+      const urlObj = new URL(tab.url);
+      displayText = urlObj.hostname.replace('www.', '');
+    } catch {
+      displayText = tab.url.length > 15 ? tab.url.substring(0, 12) + '...' : tab.url;
+    }
+  }
+  
   tab.button.textContent = displayText;
   tab.button.title = tab.url;
 }
@@ -162,17 +167,29 @@ urlInput.addEventListener("keydown", e => {
 });
 newTabBtn.onclick = () => createTab();
 
-// Iframe load handler to update tab title
+// Iframe load handler
 iframe.addEventListener('load', function() {
-  if (currentTabId && iframe.contentWindow) {
-    try {
-      const tab = tabs.find(t => t.id === currentTabId);
-      if (tab && iframe.contentWindow.document.title) {
-        tab.title = iframe.contentWindow.document.title || tab.url;
-        updateTabDisplay(tab);
+  if (currentTabId) {
+    const tab = tabs.find(t => t.id === currentTabId);
+    if (tab) {
+      try {
+        // Try to get title from iframe (may be blocked by CORS)
+        if (iframe.contentWindow && iframe.contentWindow.document) {
+          const title = iframe.contentWindow.document.title;
+          if (title && title !== 'Ultraviolet Proxy') {
+            tab.title = title;
+            updateTabDisplay(tab);
+          }
+        }
+      } catch (e) {
+        // CORS error - can't access iframe content
+        // Use URL hostname as title
+        try {
+          const urlObj = new URL(tab.url);
+          tab.title = urlObj.hostname.replace('www.', '');
+          updateTabDisplay(tab);
+        } catch {}
       }
-    } catch (e) {
-      // Cross-origin restriction
     }
   }
 });
@@ -180,15 +197,12 @@ iframe.addEventListener('load', function() {
 // Initialize
 createTab();
 
-// Quick navigation buttons (optional)
-document.addEventListener('DOMContentLoaded', () => {
-  // Add quick links for testing
-  const quickLinks = document.createElement('div');
-  quickLinks.className = 'quick-links';
-  quickLinks.innerHTML = `
-    <button onclick="urlInput.value='https://www.google.com'; navigate()">Google</button>
-    <button onclick="urlInput.value='https://www.wikipedia.org'; navigate()">Wikipedia</button>
-    <button onclick="urlInput.value='https://www.youtube.com'; navigate()">YouTube</button>
-  `;
-  document.querySelector('.omnibox').appendChild(quickLinks);
+// Debug: Check UV on load
+window.addEventListener('load', () => {
+  console.log('Page loaded');
+  if (window.__uv$config) {
+    console.log('UV config loaded:', window.__uv$config);
+  } else {
+    console.error('UV config NOT loaded!');
+  }
 });
