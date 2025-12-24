@@ -3,6 +3,7 @@ import { Ultraviolet } from "@titaniumnetwork-dev/ultraviolet";
 
 const app = express();
 
+// Create Ultraviolet instance
 const uv = new Ultraviolet({
   prefix: "/uv/",
   bare: "/bare/",
@@ -10,13 +11,13 @@ const uv = new Ultraviolet({
   decodeUrl: Ultraviolet.codec.xor.decode
 });
 
-// Ultraviolet middleware
+// Mount Ultraviolet
 app.use("/uv/", uv.middleware);
 
-// Static files
+// Serve frontend
 app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Ultraviolet running on port ${PORT}`);
+  console.log("Ultraviolet running on port " + PORT);
 });
