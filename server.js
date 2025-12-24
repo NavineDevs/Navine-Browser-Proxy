@@ -2,11 +2,15 @@ const express = require("express");
 const ultraviolet = require("@titaniumnetwork-dev/ultraviolet");
 const { createBareServer } = require("@tomphttp/bare-server-node");
 
+// Log the export of ultraviolet to determine how to import it correctly
+console.log(require("@titaniumnetwork-dev/ultraviolet"));
+
 const app = express();
 
 const bare = createBareServer("/bare/");
 
-// Initialize Ultraviolet (assuming it's a function)
+// Initialize Ultraviolet
+// (Update this part after seeing the console output)
 const uv = ultraviolet({
   prefix: "/uv/",
   bare: "/bare/"
