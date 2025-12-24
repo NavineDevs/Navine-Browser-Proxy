@@ -1,17 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Navine Browser Proxy</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <!-- Your existing CSS -->
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
 
 <header class="topbar">
   <div class="brand">Navine</div>
+  <!-- This is where tabs will be inserted dynamically -->
   <div id="tabs" class="tabs"></div>
   <div class="controls">
     <button id="newTab">＋</button>
@@ -19,7 +20,7 @@
 </header>
 
 <div class="omnibox">
-  <input id="urlInput" placeholder="Search or enter URL">
+  <input id="urlInput" placeholder="Search or enter URL" />
   <button id="goBtn">Go</button>
 </div>
 
@@ -29,8 +30,143 @@
 <script src="/uv/uv.bundle.js"></script>
 <script src="/uv/uv.config.js"></script>
 
-<!-- App logic -->
-<script src="/app.js"></script>
+<!-- Your JavaScript logic -->
+<script>
+  const urlInput = document.getElementById("urlInput");
+  const goBtn = document.getElementById("goBtn");
+  const iframe = document.getElementById("browser");
+  const tabsContainer = document.getElementById("tabs");
+  const newTabBtn = document.getElementById("newTab");
+
+  let tabs = [];
+  let currentTabId = null;
+
+  function isUrl(value) {
+    try {
+      new URL(value);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function formatInput(input) {
+    input = input.trim();
+    if (isUrl(input)) return input;
+    if (input.includes('.') && !input.includes(' ')) {
+      return 'https://' + input;
+    }
+    return 'https://www.google.com/search?q=' + encodeURIComponent(input);
+  }
+
+  function createTab(url = 'about:blank') {
+    const tabId = Date.now().toString();
+
+    // Create tab button
+    const tabBtn = document.createElement('button');
+    tabBtn.className = 'tab-btn';
+    tabBtn.textContent = 'New Tab';
+
+    // Switch to tab on click
+    tabBtn.onclick = () => switchTab(tabId);
+
+    // Create close button
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'close-btn';
+    closeBtn.textContent = '×';
+    closeBtn.onclick = (e) => {
+      e.stopPropagation();
+      closeTab(tabId);
+    };
+
+    // Container for tab button and close button
+    const tabDiv = document.createElement('div');
+    tabDiv.style.display = 'flex';
+    tabDiv.style.alignItems = 'center';
+    tabDiv.style.marginRight = '4px';
+
+    tabDiv.appendChild(tabBtn);
+    tabDiv.appendChild(closeBtn);
+    tabsContainer.appendChild(tabDiv);
+
+    // Save tab info
+    tabs.push({ id: tabId, button: tabBtn, url: url, wrapper: tabDiv });
+
+    // Switch to new tab
+    switchTab(tabId);
+  }
+
+  function switchTab(tabId) {
+    const tab = tabs.find(t => t.id === tabId);
+    if (!tab) return;
+
+    currentTabId = tabId;
+
+    // Update iframe src
+    iframe.src = tab.url;
+
+    // Update tab button styles
+    tabs.forEach(t => {
+      t.button.classList.toggle('active', t.id === tabId);
+      t.button.textContent = t.url;
+    });
+  }
+
+  function closeTab(tabId) {
+    const index = tabs.findIndex(t => t.id === tabId);
+    if (index === -1) return;
+
+    // Remove tab DOM element
+    tabs[index].wrapper.remove();
+
+    // Remove from array
+    tabs.splice(index, 1);
+
+    // If current tab is closed, switch to another
+    if (currentTabId === tabId) {
+      if (tabs.length > 0) {
+        switchTab(tabs[0].id);
+      } else {
+        iframe.src = '';
+        currentTabId = null;
+      }
+    }
+  }
+
+  function navigate() {
+    if (!window.__uv$config) {
+      alert("Ultraviolet not loaded");
+      return;
+    }
+
+    const raw = urlInput.value;
+    if (!raw) return;
+
+    const target = formatInput(raw);
+    const encoded = __uv$config.encodeUrl(target);
+
+    // Update current tab's URL
+    const currentTab = tabs.find(t => t.id === currentTabId);
+    if (currentTab) {
+      currentTab.url = target;
+      currentTab.button.textContent = target;
+    }
+
+    iframe.src = __uv$config.prefix + encoded;
+  }
+
+  // Initialize with one tab
+  createTab();
+
+  goBtn.addEventListener("click", navigate);
+  urlInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") navigate();
+  });
+
+  // Create new tab with "+" button
+  newTabBtn.onclick = () => createTab();
+
+</script>
 
 </body>
 </html>
