@@ -1,20 +1,18 @@
-import express from "express";
-import pkg from "@titaniumnetwork-dev/ultraviolet";
-
-const { createServer } = pkg;
+const express = require("express");
+const { Ultraviolet } = require("@titaniumnetwork-dev/ultraviolet");
 
 const app = express();
 
-// Create Ultraviolet middleware
-const uv = createServer({
+// Ultraviolet IS a constructor in CommonJS
+const uv = new Ultraviolet({
   prefix: "/uv/",
   bare: "/bare/"
 });
 
 // Mount Ultraviolet
-app.use("/uv/", uv);
+app.use("/uv/", uv.middleware);
 
-// Serve static files
+// Serve frontend
 app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
