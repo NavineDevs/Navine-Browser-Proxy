@@ -1,4 +1,4 @@
-// public/app.js - Fixed navigation
+// public/app.js - Simple working version
 const urlInput = document.getElementById("urlInput");
 const goBtn = document.getElementById("goBtn");
 const iframe = document.getElementById("browser");
@@ -8,65 +8,62 @@ const newTabBtn = document.getElementById("newTab");
 let tabs = [];
 let currentTabId = null;
 
-// Check if UV is loaded
-function checkUV() {
-  if (!window.__uv$config) {
-    console.error('UV not loaded! Check if /uv/ files are accessible.');
-    alert('Ultraviolet proxy not loaded. Please refresh the page.');
-    return false;
+// Initialize
+function init() {
+  // Check if UV is loaded
+  if (!window.Ultraviolet) {
+    console.error('Ultraviolet not found');
+    setTimeout(() => {
+      if (!window.Ultraviolet) {
+        alert('Ultraviolet proxy not loaded. Please check console.');
+      }
+    }, 1000);
   }
-  return true;
-}
-
-function isUrl(value) {
-  try {
-    new URL(value);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function formatInput(input) {
-  input = input.trim();
-  if (isUrl(input)) return input;
-  if (input.includes('.') && !input.includes(' ')) {
-    return 'https://' + input;
-  }
-  return 'https://www.google.com/search?q=' + encodeURIComponent(input);
+  
+  // Create first tab
+  createTab();
+  
+  // Set up event listeners
+  goBtn.addEventListener("click", navigate);
+  urlInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") navigate();
+  });
+  newTabBtn.addEventListener("click", () => createTab());
+  
+  // Quick navigation buttons
+  setupQuickNav();
 }
 
 function navigate() {
-  if (!checkUV()) return;
-  
   const raw = urlInput.value.trim();
   if (!raw) return;
   
-  const target = formatInput(raw);
-  
+  let url;
   try {
-    // Use UV to encode the URL
-    const encoded = __uv$config.encodeUrl(target);
-    const proxiedUrl = __uv$config.prefix + encoded;
-    
-    console.log('Navigating to:', target);
-    console.log('Proxied URL:', proxiedUrl);
-    
-    // Load in iframe
-    iframe.src = proxiedUrl;
-    
-    // Update current tab
-    if (currentTabId) {
-      const tab = tabs.find(t => t.id === currentTabId);
-      if (tab) {
-        tab.url = target;
-        tab.proxiedUrl = proxiedUrl;
-        updateTabDisplay(tab);
-      }
+    // Try to parse as URL
+    new URL(raw);
+    url = raw;
+  } catch {
+    // If not a valid URL, treat as search
+    if (raw.includes('.') && !raw.includes(' ')) {
+      url = 'https://' + raw;
+    } else {
+      url = 'https://www.google.com/search?q=' + encodeURIComponent(raw);
     }
-  } catch (error) {
-    console.error('Navigation error:', error);
-    alert('Error navigating: ' + error.message);
+  }
+  
+  console.log('Navigating to:', url);
+  
+  // Update iframe using direct /go route
+  iframe.src = `/go?url=${encodeURIComponent(url)}`;
+  
+  // Update current tab
+  if (currentTabId) {
+    const tab = tabs.find(t => t.id === currentTabId);
+    if (tab) {
+      tab.url = url;
+      updateTabDisplay(tab);
+    }
   }
 }
 
@@ -97,7 +94,6 @@ function createTab(url = 'about:blank') {
     button: tabBtn,
     container: tabDiv,
     url: url,
-    proxiedUrl: url,
     title: 'New Tab'
   };
   
@@ -113,7 +109,11 @@ function switchTab(tabId) {
   currentTabId = tabId;
   
   // Update iframe
-  iframe.src = tab.proxiedUrl;
+  if (tab.url !== 'about:blank') {
+    iframe.src = `/go?url=${encodeURIComponent(tab.url)}`;
+  } else {
+    iframe.src = '';
+  }
   
   // Update URL input
   urlInput.value = tab.url === 'about:blank' ? '' : tab.url;
@@ -132,8 +132,12 @@ function updateTabDisplay(tab) {
     try {
       const urlObj = new URL(tab.url);
       displayText = urlObj.hostname.replace('www.', '');
+      // Limit length
+      if (displayText.length > 20) {
+        displayText = displayText.substring(0, 17) + '...';
+      }
     } catch {
-      displayText = tab.url.length > 15 ? tab.url.substring(0, 12) + '...' : tab.url;
+      displayText = 'Page';
     }
   }
   
@@ -160,49 +164,28 @@ function closeTab(tabId) {
   }
 }
 
-// Event Listeners
-goBtn.addEventListener("click", navigate);
-urlInput.addEventListener("keydown", e => {
-  if (e.key === "Enter") navigate();
-});
-newTabBtn.onclick = () => createTab();
-
-// Iframe load handler
-iframe.addEventListener('load', function() {
-  if (currentTabId) {
-    const tab = tabs.find(t => t.id === currentTabId);
-    if (tab) {
-      try {
-        // Try to get title from iframe (may be blocked by CORS)
-        if (iframe.contentWindow && iframe.contentWindow.document) {
-          const title = iframe.contentWindow.document.title;
-          if (title && title !== 'Ultraviolet Proxy') {
-            tab.title = title;
-            updateTabDisplay(tab);
-          }
-        }
-      } catch (e) {
-        // CORS error - can't access iframe content
-        // Use URL hostname as title
-        try {
-          const urlObj = new URL(tab.url);
-          tab.title = urlObj.hostname.replace('www.', '');
-          updateTabDisplay(tab);
-        } catch {}
-      }
-    }
+function setupQuickNav() {
+  const quickNav = document.createElement('div');
+  quickNav.className = 'quick-nav';
+  quickNav.innerHTML = `
+    <button onclick="urlInput.value='https://www.google.com'; navigate()">Google</button>
+    <button onclick="urlInput.value='https://www.wikipedia.org'; navigate()">Wikipedia</button>
+    <button onclick="urlInput.value='https://www.youtube.com'; navigate()">YouTube</button>
+    <button onclick="urlInput.value='https://example.com'; navigate()">Example</button>
+  `;
+  
+  // Insert after omnibox
+  const omnibox = document.querySelector('.omnibox');
+  if (omnibox) {
+    omnibox.parentNode.insertBefore(quickNav, omnibox.nextSibling);
   }
-});
+}
 
-// Initialize
-createTab();
+// Start when page loads
+document.addEventListener('DOMContentLoaded', init);
 
-// Debug: Check UV on load
-window.addEventListener('load', () => {
-  console.log('Page loaded');
-  if (window.__uv$config) {
-    console.log('UV config loaded:', window.__uv$config);
-  } else {
-    console.error('UV config NOT loaded!');
-  }
-});
+// Make functions available globally for buttons
+window.navigate = navigate;
+window.createTab = createTab;
+window.switchTab = switchTab;
+window.closeTab = closeTab;
