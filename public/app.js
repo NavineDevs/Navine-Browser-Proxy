@@ -1,4 +1,4 @@
-// public/app.js - Fixed UV Browser
+// public/app.js - UV Browser
 const urlInput = document.getElementById("urlInput");
 const goBtn = document.getElementById("goBtn");
 const iframe = document.getElementById("browser");
@@ -18,9 +18,9 @@ let uvConfig = {
 
 // Initialize
 function init() {
-  console.log('🚀 UV Browser initializing...');
+  console.log('🚀 UV Browser starting...');
   
-  // Load UV scripts
+  // Preload UV in background
   loadUV();
   
   // Create first tab
@@ -43,54 +43,61 @@ function init() {
   }, 300);
 }
 
-// Load UV scripts properly
+// Load UV scripts
 function loadUV() {
-  // Don't reload if already loading/loaded
-  if (window.__uv$loading) return;
+  // Don't reload if already loaded
+  if (window.__uv$loading || window.Ultraviolet) return;
   window.__uv$loading = true;
   
-  console.log('📦 Loading UV scripts...');
+  console.log('📦 Loading UV...');
   
-  // Create UV config
-  window.__uv$config = uvConfig;
-  
-  // Load UV bundle (contains Ultraviolet class)
+  // Load UV bundle
   const bundleScript = document.createElement('script');
   bundleScript.src = '/uv/uv.bundle.js';
   bundleScript.async = false;
   
-  bundleScript.onload = function() {
+  bundleScript.onload = () => {
     console.log('✅ UV bundle loaded');
-    
-    // Set encode/decode functions now that Ultraviolet is available
-    if (window.Ultraviolet && window.Ultraviolet.codec) {
-      uvConfig.encodeUrl = Ultraviolet.codec.xor.encode;
-      uvConfig.decodeUrl = Ultraviolet.codec.xor.decode;
-      window.__uv$config = uvConfig;
-      
-      console.log('✅ UV codec available');
-    }
     
     // Load UV config
     const configScript = document.createElement('script');
     configScript.src = '/uv/uv.config.js';
     configScript.async = false;
     
-    configScript.onload = function() {
+    configScript.onload = () => {
       console.log('✅ UV config loaded');
       window.__uv$loading = false;
+      
+      // Set UV functions if available
+      if (window.Ultraviolet && window.Ultraviolet.codec) {
+        uvConfig.encodeUrl = Ultraviolet.codec.xor.encode;
+        uvConfig.decodeUrl = Ultraviolet.codec.xor.decode;
+        
+        // Also set global config for UV service page
+        window.__uv$config = {
+          prefix: '/uv/service/',
+          bare: '/bare/',
+          encodeUrl: Ultraviolet.codec.xor.encode,
+          decodeUrl: Ultraviolet.codec.xor.decode,
+          handler: '/uv/uv.handler.js',
+          bundle: '/uv/uv.bundle.js',
+          config: '/uv/uv.config.js',
+          client: '/uv/uv.client.js',
+          sw: '/uv/uv.sw.js'
+        };
+      }
     };
     
-    configScript.onerror = function() {
-      console.warn('⚠️ UV config failed to load');
+    configScript.onerror = () => {
+      console.warn('⚠️ UV config failed');
       window.__uv$loading = false;
     };
     
     document.head.appendChild(configScript);
   };
   
-  bundleScript.onerror = function() {
-    console.error('❌ Failed to load UV bundle');
+  bundleScript.onerror = () => {
+    console.error('❌ UV bundle failed');
     window.__uv$loading = false;
   };
   
@@ -110,7 +117,7 @@ function formatUrl(input) {
   input = input.trim();
   if (!input) return '';
   
-  // Check if already a valid URL
+  // Already a valid URL?
   try {
     new URL(input);
     return input;
@@ -136,7 +143,7 @@ function navigate() {
   try {
     new URL(url);
   } catch {
-    alert('Please enter a valid URL');
+    alert('Invalid URL');
     return;
   }
   
@@ -149,7 +156,7 @@ function navigate() {
     }
   }
   
-  // Navigate using UV
+  // Navigate with UV
   navigateUV(url);
 }
 
@@ -159,9 +166,7 @@ function navigateUV(url) {
   
   // Check if UV is ready
   if (!isUVReady()) {
-    console.warn('UV not ready, loading...');
-    
-    // Try to load UV
+    console.warn('UV not ready, trying to load...');
     loadUV();
     
     // Try again in a moment
@@ -169,32 +174,31 @@ function navigateUV(url) {
       if (isUVReady()) {
         navigateUV(url);
       } else {
-        alert('UV proxy is still loading. Please try again.');
+        alert('UV proxy is not ready. Please wait or try again.');
       }
-    }, 500);
-    
+    }, 1000);
     return;
   }
   
   try {
     // Encode with UV XOR
     const encoded = uvConfig.encodeUrl(url);
-    console.log('🔐 Encoded:', encoded.substring(0, 50) + '...');
+    console.log('🔐 Encoded (first 50 chars):', encoded.substring(0, 50));
     
     // Build UV service URL
     const uvUrl = uvConfig.prefix + encoded;
-    console.log('📡 UV URL:', uvUrl);
+    console.log('📡 Loading UV URL');
     
     // Load in iframe
     iframe.src = uvUrl;
     
   } catch (error) {
-    console.error('❌ UV encoding error:', error);
+    console.error('❌ UV error:', error);
     alert('UV Error: ' + error.message);
   }
 }
 
-// Tab management
+// Tab management (same as before)
 function createTab(url = 'about:blank') {
   const tabId = Date.now().toString();
   
@@ -236,14 +240,12 @@ function switchTab(tabId) {
 
   currentTabId = tabId;
   
-  // Update iframe
   if (tab.url !== 'about:blank') {
     if (isUVReady()) {
       try {
         const encoded = uvConfig.encodeUrl(tab.url);
         iframe.src = uvConfig.prefix + encoded;
-      } catch (error) {
-        console.error('Failed to switch tab:', error);
+      } catch {
         iframe.src = '';
       }
     } else {
@@ -253,10 +255,8 @@ function switchTab(tabId) {
     iframe.src = '';
   }
   
-  // Update URL input
   urlInput.value = tab.url === 'about:blank' ? '' : tab.url;
   
-  // Update tab styles
   tabs.forEach(t => {
     t.button.classList.toggle('active', t.id === tabId);
     updateTabDisplay(t);
@@ -316,8 +316,7 @@ function addQuickNav() {
     { name: 'Google', url: 'https://www.google.com' },
     { name: 'YouTube', url: 'https://www.youtube.com' },
     { name: 'Wikipedia', url: 'https://www.wikipedia.org' },
-    { name: 'GitHub', url: 'https://github.com' },
-    { name: 'Twitter', url: 'https://twitter.com' }
+    { name: 'GitHub', url: 'https://github.com' }
   ];
   
   quickNav.innerHTML = `
@@ -327,7 +326,6 @@ function addQuickNav() {
     ).join('')}
   `;
   
-  // Insert after omnibox
   const omnibox = document.querySelector('.omnibox');
   if (omnibox && omnibox.parentNode) {
     omnibox.parentNode.insertBefore(quickNav, omnibox.nextSibling);
