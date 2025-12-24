@@ -1,20 +1,16 @@
 const express = require("express");
-const ultravioletModule = require("@titaniumnetwork-dev/ultraviolet");
+// Require the main file inside the 'dist' folder
+const ultraviolet = require("@titaniumnetwork-dev/ultraviolet/dist");
 const { createBareServer } = require("@tomphttp/bare-server-node");
 
-// Debug: log the module to see its structure
-console.log("Ultraviolet module export:", ultravioletModule);
+// Check what is exported
+console.log("Ultraviolet import:", ultraviolet);
 
-// Assuming the module has a method 'createUltraviolet' or similar
-// You need to adjust this based on the actual exported structure
-// First, check if there's a method
-const createUltraviolet = ultravioletModule.createUltraviolet || ultravioletModule.default || ultravioletModule;
+// Assuming the module exports an object with a method or class to create the instance
+// If the module has a method or class, you should initialize it accordingly.
 
-// Initialize ultraviolet
-const uv = createUltraviolet({
-  prefix: "/uv/",
-  bare: "/bare/"
-});
+// For demonstration, if ultraviolet is already an instance or object with middleware:
+const uv = ultraviolet; // Use directly if it has middleware property
 
 const app = express();
 
@@ -30,7 +26,12 @@ app.use((req, res, next) => {
 });
 
 // Use Ultraviolet middleware
-app.use("/uv/", uv.middleware);
+// If ultraviolet has a 'middleware' property:
+if (uv.middleware) {
+  app.use("/uv/", uv.middleware);
+} else {
+  console.error("Ultraviolet does not have a middleware property");
+}
 
 // Static files
 app.use(express.static("public"));
