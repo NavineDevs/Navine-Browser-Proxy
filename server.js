@@ -1,10 +1,13 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const { createBareServer } = require('@tomphttp/bare-server-node');
 const { uvPath } = require('@titaniumnetwork-dev/ultraviolet');
-const app = express();
 
+const app = express();
 const PORT = process.env.PORT || 10000;
+
+// Create bare server
 const bareServer = createBareServer('/bare/');
 
 // Serve static files
@@ -13,7 +16,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Serve UV files
 app.use('/uv', express.static(uvPath));
 
-// Handle bare server
+// Handle bare server requests
 app.use((req, res, next) => {
   if (req.url.startsWith('/bare/')) {
     bareServer.handleRequest(req, res);
@@ -22,217 +25,187 @@ app.use((req, res, next) => {
   }
 });
 
-// UV SERVICE ROUTE - Handle encoded URLs
-app.get('/service/:encodedUrl(*)', (req, res) => {
-  const encodedUrl = req.params.encodedUrl;
+// CRITICAL FIX: Handle UV service routes with wildcard
+// This catches ALL /service/* requests including those with special characters
+app.get('/service/*', (req, res) => {
+  // Get the full path after /service/
+  const fullPath = req.path;
+  const encoded = fullPath.substring('/service/'.length);
   
-  console.log('Service request for encoded URL:', encodedUrl);
+  console.log('UV Service request:', { encoded, fullPath });
   
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
-      <base href="/service/" />
+      <base href="/" />
       <script src="/uv/uv.bundle.js"></script>
       <script src="/uv/uv.config.js"></script>
-      <script>
-        // Custom UV config
-        window.__uv$config = {
-          prefix: '/service/',
-          bare: '/bare/',
-          encodeUrl: Ultraviolet.codec.xor.encode,
-          decodeUrl: Ultraviolet.codec.xor.decode,
-          handler: '/uv/uv.handler.js',
-          bundle: '/uv/uv.bundle.js',
-          config: '/uv/uv.config.js',
-          client: '/uv/uv.client.js',
-          sw: '/uv/uv.sw.js'
-        };
-        
-        document.addEventListener('DOMContentLoaded', function() {
-          try {
-            // Get the encoded URL
-            const path = window.location.pathname;
-            const prefix = '/service/';
-            const encoded = path.substring(prefix.length);
-            
-            console.log('Encoded from path:', encoded);
-            
-            // Decode using UV
-            const decoded = __uv$config.decodeUrl(encoded);
-            console.log('Decoded URL:', decoded);
-            
-            // Use UV to fetch and rewrite
-            const uv = new Ultraviolet(__uv$config);
-            
-            fetch(decoded)
-              .then(response => response.text())
-              .then(html => {
-                const rewritten = uv.rewriteHtml(html, {
-                  document: window.document,
-                  url: decoded
-                });
-                
-                document.open();
-                document.write(rewritten);
-                document.close();
-              })
-              .catch(err => {
-                document.body.innerHTML = '<h1>Proxy Error</h1><p>' + err.message + '</p>';
-              });
-              
-          } catch(err) {
-            console.error('Error:', err);
-            document.body.innerHTML = '<h1>Error</h1><p>' + err.message + '</p>';
-          }
-        });
-      </script>
+      <link rel="stylesheet" href="/uv/uv.css">
+      <style>
+        body {
+          margin: 0;
+          padding: 20px;
+          font-family: Arial, sans-serif;
+          background: #f5f5f5;
+        }
+        .error {
+          color: #d32f2f;
+          background: #ffebee;
+          padding: 15px;
+          border-radius: 5px;
+          margin: 20px 0;
+        }
+      </style>
     </head>
     <body>
-      Loading proxied content...
+      <div id="content">
+        <h2>Loading via UV Proxy...</h2>
+        <p>If this takes too long, there might be an error.</p>
+      </div>
+      
+      <script>
+        (async function() {
+          try {
+            // Wait for UV to load
+            if (!window.Ultraviolet) {
+              throw new Error('Ultraviolet not loaded');
+            }
+            
+            // Get encoded URL from path
+            const currentPath = window.location.pathname;
+            const prefix = '/service/';
+            const encodedUrl = currentPath.substring(prefix.length);
+            
+            console.log('Encoded URL from path:', encodedUrl);
+            
+            // Set up UV config
+            const uvConfig = {
+              prefix: '/service/',
+              bare: '/bare/',
+              encodeUrl: Ultraviolet.codec.xor.encode,
+              decodeUrl: Ultraviolet.codec.xor.decode,
+              handler: '/uv/uv.handler.js',
+              bundle: '/uv/uv.bundle.js',
+              config: '/uv/uv.config.js',
+              client: '/uv/uv.client.js',
+              sw: '/uv/uv.sw.js'
+            };
+            
+            // Decode the URL
+            const decodedUrl = uvConfig.decodeUrl(encodedUrl);
+            console.log('Decoded URL:', decodedUrl);
+            
+            // Create UV instance
+            const uv = new UVServiceWorker();
+            uv.mount(uvConfig);
+            
+            // Try to navigate using UV
+            await uv.fetch(decodedUrl)
+              .then(response => response.text())
+              .then(data => {
+                // UV will handle rewriting automatically
+                document.open();
+                document.write(data);
+                document.close();
+              });
+              
+          } catch(error) {
+            console.error('UV Proxy Error:', error);
+            document.getElementById('content').innerHTML = 
+              '<div class="error"><h3>Proxy Error</h3><p>' + error.message + '</p></div>';
+          }
+        })();
+      </script>
     </body>
     </html>
   `);
 });
 
-// SIMPLE PROXY - Works every time
-app.get('/go', (req, res) => {
-  const url = req.query.url || 'https://www.google.com';
+// SIMPLE UV TEST - This should work
+app.get('/uv-test', (req, res) => {
+  const testUrl = 'https://www.google.com';
   
-  // Encode URL for UV (simple base64)
-  const encoded = Buffer.from(url).toString('base64');
+  // Manually encode with URL-safe base64
+  const encoded = Buffer.from(testUrl).toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
   
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Proxy: ${url}</title>
+      <title>UV Test</title>
+      <script src="/uv/uv.bundle.js"></script>
       <script>
-        // Simple proxy that always works
-        const originalUrl = atob('${encoded}');
-        
-        // Create an iframe that loads the content
+        // Simple test that bypasses XOR encoding issues
         document.addEventListener('DOMContentLoaded', function() {
           const iframe = document.createElement('iframe');
-          iframe.style = 'width: 100%; height: 100vh; border: none; position: fixed; top: 0; left: 0;';
-          iframe.src = 'https://corsproxy.io/?' + encodeURIComponent(originalUrl);
+          iframe.style = 'width: 100%; height: 100vh; border: none;';
+          iframe.src = '/service/${encoded}?type=base64';
           document.body.appendChild(iframe);
         });
       </script>
     </head>
     <body>
-      Loading ${url}...
+      Testing UV proxy...
     </body>
     </html>
   `);
 });
 
-// ALTERNATIVE PROXY - Using iframe directly
-app.get('/frame', (req, res) => {
-  const url = req.query.url || 'https://www.google.com';
+// Alternative: Use base64 encoding instead of XOR
+app.get('/service-base64/*', (req, res) => {
+  const encoded = req.params[0];
   
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>${url}</title>
-      <style>
-        body, html { margin: 0; padding: 0; overflow: hidden; height: 100%; }
-        iframe { width: 100%; height: 100%; border: none; }
-      </style>
-    </head>
-    <body>
-      <iframe 
-        src="https://corsproxy.io/?${encodeURIComponent(url)}" 
-        sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
-        allowfullscreen>
-      </iframe>
-    </body>
-    </html>
-  `);
+  try {
+    // Decode from URL-safe base64
+    const decoded = Buffer.from(
+      encoded.replace(/-/g, '+').replace(/_/g, '/'), 
+      'base64'
+    ).toString();
+    
+    console.log('Base64 proxy request:', decoded);
+    
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <script src="/uv/uv.bundle.js"></script>
+        <script>
+          // Use UV with this specific URL
+          const uv = new UVServiceWorker();
+          const config = {
+            prefix: '/service/',
+            bare: '/bare/',
+            handler: '/uv/uv.handler.js'
+          };
+          uv.mount(config);
+          
+          // Navigate to the decoded URL
+          window.location.href = config.prefix + Ultraviolet.codec.xor.encode('${decoded}');
+        </script>
+      </head>
+      <body>
+        Redirecting...
+      </body>
+      </html>
+    `);
+    
+  } catch(error) {
+    res.status(400).send('Invalid base64 encoding');
+  }
 });
 
-// SIMPLE WORKING BROWSER - No UV
-app.get('/simple', (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Simple Browser</title>
-      <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: Arial, sans-serif; height: 100vh; display: flex; flex-direction: column; }
-        
-        .navbar {
-          display: flex;
-          padding: 10px;
-          background: #1a73e8;
-        }
-        
-        #urlInput {
-          flex: 1;
-          padding: 8px 12px;
-          border: none;
-          border-radius: 4px 0 0 4px;
-        }
-        
-        #goBtn {
-          padding: 8px 16px;
-          background: white;
-          border: none;
-          border-radius: 0 4px 4px 0;
-          cursor: pointer;
-        }
-        
-        iframe {
-          flex: 1;
-          width: 100%;
-          border: none;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="navbar">
-        <input type="text" id="urlInput" placeholder="Enter URL (e.g., https://www.google.com)" value="https://www.google.com">
-        <button id="goBtn">Go</button>
-      </div>
-      <iframe id="browserFrame"></iframe>
-      
-      <script>
-        const urlInput = document.getElementById('urlInput');
-        const goBtn = document.getElementById('goBtn');
-        const browserFrame = document.getElementById('browserFrame');
-        
-        function navigate() {
-          let url = urlInput.value.trim();
-          
-          if (!url) return;
-          
-          // Add https:// if missing
-          if (!url.startsWith('http://') && !url.startsWith('https://')) {
-            url = 'https://' + url;
-          }
-          
-          // Use corsproxy.io to bypass CORS
-          browserFrame.src = 'https://corsproxy.io/?' + encodeURIComponent(url);
-        }
-        
-        goBtn.addEventListener('click', navigate);
-        urlInput.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') navigate();
-        });
-        
-        // Load initial page
-        setTimeout(navigate, 100);
-      </script>
-    </body>
-    </html>
-  `);
-});
-
-// Health check
+// Health check for Render
 app.get('/health', (req, res) => {
-  res.status(200).send('OK');
+  res.status(200).json({ 
+    status: 'OK', 
+    service: 'Navine Browser',
+    timestamp: new Date().toISOString(),
+    uv: fs.existsSync(path.join(uvPath, 'uv.bundle.js'))
+  });
 });
 
 // Main page
@@ -240,17 +213,38 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Catch-all
+// Catch-all route
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Error handling
+app.use((err, req, res, next) => {
+  console.error('Server error:', err);
+  res.status(500).send(`
+    <h1>Server Error</h1>
+    <p>${err.message}</p>
+    <a href="/">Return Home</a>
+  `);
+});
+
+// Start server
 app.listen(PORT, () => {
   console.log(`
-🚀 Server running on port ${PORT}
-🌐 Simple browser: http://localhost:${PORT}/simple
-📡 Frame proxy: http://localhost:${PORT}/frame?url=https://www.google.com
-🔗 Go proxy: http://localhost:${PORT}/go?url=https://www.google.com
-🏠 Main browser: http://localhost:${PORT}
+========================================
+🚀 Navine Browser UV Proxy
+📍 Port: ${PORT}
+🔗 Health: http://localhost:${PORT}/health
+🧪 UV Test: http://localhost:${PORT}/uv-test
+🏠 Main: http://localhost:${PORT}
+========================================
   `);
+  
+  // Check UV files
+  const uvBundlePath = path.join(uvPath, 'uv.bundle.js');
+  if (fs.existsSync(uvBundlePath)) {
+    console.log('✅ UV files found at:', uvPath);
+  } else {
+    console.warn('⚠️  UV bundle not found at:', uvBundlePath);
+  }
 });
