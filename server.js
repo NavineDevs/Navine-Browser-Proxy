@@ -15,7 +15,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Serve UV files
 app.use('/uv', express.static(uvPath));
 
-// Handle bare server requests
+// Handle bare server
 app.use((req, res, next) => {
   if (req.url.startsWith('/bare/')) {
     bareServer.handleRequest(req, res);
@@ -24,14 +24,12 @@ app.use((req, res, next) => {
   }
 });
 
-// UV SERVICE ENDPOINT - This is the main UV proxy
+// UV SERVICE ENDPOINT - Fixed
 app.get('/uv/service/*', (req, res) => {
-  // Decode the URL parameter once
-  const encoded = decodeURIComponent(req.params[0]);
+  const encoded = req.params[0];
   
-  console.log('UV service for encoded:', encoded.substring(0, 50));
+  console.log('UV service request received');
   
-  // Serve UV client page
   const html = `
   <!DOCTYPE html>
   <html>
@@ -39,10 +37,10 @@ app.get('/uv/service/*', (req, res) => {
     <base href="/uv/service/" />
     <title>UV Proxy</title>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- UV Configuration -->
     <script>
-      // Set UV config BEFORE loading UV scripts
       window.__uv$config = {
         prefix: '/uv/service/',
         bare: '/bare/',
@@ -56,94 +54,234 @@ app.get('/uv/service/*', (req, res) => {
       };
     </script>
     
-    <!-- Load UV scripts -->
+    <!-- Load ALL UV scripts in correct order -->
     <script src="/uv/uv.bundle.js"></script>
     <script src="/uv/uv.config.js"></script>
     <script src="/uv/uv.client.js"></script>
+    <script src="/uv/uv.handler.js"></script>
     
     <style>
-      body {
+      * {
         margin: 0;
-        padding: 20px;
-        font-family: Arial, sans-serif;
-        background: #1a1a1a;
-        color: white;
-        height: 100vh;
-        overflow: hidden;
+        padding: 0;
+        box-sizing: border-box;
       }
-      #uv-error {
-        background: #ff4444;
-        color: white;
+      
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
         padding: 20px;
-        margin: 20px;
-        border-radius: 5px;
-        display: none;
+      }
+      
+      .container {
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        padding: 40px;
+        max-width: 500px;
+        width: 100%;
+        text-align: center;
+      }
+      
+      h1 {
+        color: #333;
+        margin-bottom: 20px;
+        font-size: 28px;
+      }
+      
+      .status {
+        color: #666;
+        font-size: 16px;
+        margin: 20px 0;
+        line-height: 1.6;
+      }
+      
+      .loader {
+        border: 5px solid #f3f3f3;
+        border-top: 5px solid #667eea;
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        animation: spin 1s linear infinite;
+        margin: 30px auto;
+      }
+      
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      
+      .error {
+        background: #ffebee;
+        color: #c62828;
+        padding: 20px;
+        border-radius: 10px;
+        margin-top: 20px;
+        text-align: left;
+      }
+      
+      .error h3 {
+        margin-bottom: 10px;
+      }
+      
+      .error a {
+        color: #667eea;
+        text-decoration: none;
+        font-weight: 500;
+      }
+      
+      .error a:hover {
+        text-decoration: underline;
       }
     </style>
   </head>
   <body>
-    <div id="uv-error"></div>
-    <div id="content">Loading UV proxy...</div>
+    <div class="container">
+      <h1>🔗 UV Proxy</h1>
+      <div class="loader"></div>
+      <div class="status" id="status">Loading Ultraviolet...</div>
+      <div id="error" class="error" style="display: none;"></div>
+    </div>
     
     <script>
-      (async function() {
-        try {
-          // Wait for UV to load
-          while (!window.__uv$config || !window.Ultraviolet) {
-            await new Promise(r => setTimeout(r, 100));
-          }
-          
-          // Get encoded URL from path
-          const path = window.location.pathname;
-          const prefix = '/uv/service/';
-          const encodedUrl = path.substring(prefix.length);
-          
-          console.log('Encoded URL:', encodedUrl);
-          
-          // Decode URL
-          const decodedUrl = __uv$config.decodeUrl(encodedUrl);
-          console.log('Decoded URL:', decodedUrl);
-          
-          // Create UV instance
-          const uv = new UVServiceWorker();
-          
-          // Register service worker
-          if ('serviceWorker' in navigator) {
-            try {
-              await navigator.serviceWorker.register('/uv/uv.sw.js', {
-                scope: __uv$config.prefix
-              });
-              console.log('Service Worker registered');
-            } catch (e) {
-              console.warn('Service Worker registration failed:', e);
+      (function() {
+        const statusEl = document.getElementById('status');
+        const errorEl = document.getElementById('error');
+        
+        function updateStatus(message) {
+          statusEl.textContent = message;
+          console.log('UV Status:', message);
+        }
+        
+        function showError(message, details) {
+          errorEl.style.display = 'block';
+          errorEl.innerHTML = \`
+            <h3>⚠️ UV Proxy Error</h3>
+            <p>\${message}</p>
+            <p><small>\${details}</small></p>
+            <p><a href="/">← Return to Browser</a></p>
+          \`;
+          statusEl.style.display = 'none';
+          document.querySelector('.loader').style.display = 'none';
+        }
+        
+        // Wait for UV to fully load
+        function waitForUV() {
+          return new Promise((resolve, reject) => {
+            let attempts = 0;
+            const maxAttempts = 50; // 5 seconds
+            
+            function check() {
+              attempts++;
+              
+              // Check if all required UV components are loaded
+              if (window.Ultraviolet && 
+                  window.Ultraviolet.codec && 
+                  window.__uv$config &&
+                  typeof UVServiceWorker !== 'undefined') {
+                resolve();
+                return;
+              }
+              
+              if (attempts >= maxAttempts) {
+                reject(new Error('UV failed to load after ' + maxAttempts + ' attempts'));
+                return;
+              }
+              
+              setTimeout(check, 100);
             }
-          }
-          
-          // Mount UV
-          await uv.mount();
-          
-          // Navigate to the URL
-          const result = await uv.fetch(decodedUrl);
-          
-          if (result.ok) {
-            const html = await result.text();
-            const rewritten = uv.rewriteHtml(html);
+            
+            check();
+          });
+        }
+        
+        async function initUV() {
+          try {
+            updateStatus('Checking UV configuration...');
+            
+            // Wait for UV to load
+            await waitForUV();
+            updateStatus('UV loaded successfully!');
+            
+            // Get encoded URL from path
+            const currentPath = window.location.pathname;
+            const prefix = '/uv/service/';
+            
+            if (!currentPath.startsWith(prefix)) {
+              throw new Error('Invalid UV service path');
+            }
+            
+            const encodedUrl = currentPath.substring(prefix.length);
+            updateStatus('Decoding URL...');
+            
+            // Decode the URL
+            const decodedUrl = __uv$config.decodeUrl(encodedUrl);
+            console.log('Decoded URL:', decodedUrl);
+            
+            updateStatus('Connecting to: ' + decodedUrl);
+            
+            // Create and mount UV service worker
+            const uv = new UVServiceWorker();
+            
+            // Register service worker if supported
+            if ('serviceWorker' in navigator) {
+              try {
+                const registration = await navigator.serviceWorker.register('/uv/uv.sw.js', {
+                  scope: __uv$config.prefix
+                });
+                console.log('Service Worker registered:', registration);
+              } catch (swError) {
+                console.warn('Service Worker registration failed:', swError);
+                // Continue anyway, UV might work without SW
+              }
+            }
+            
+            // Mount UV
+            await uv.mount(__uv$config);
+            updateStatus('Proxy ready, loading content...');
+            
+            // Fetch the page through UV
+            const response = await uv.fetch(decodedUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+              }
+            });
+            
+            if (!response.ok) {
+              throw new Error('Failed to fetch: HTTP ' + response.status);
+            }
+            
+            const html = await response.text();
+            updateStatus('Rewriting content...');
+            
+            // Rewrite HTML
+            const rewritten = uv.rewriteHtml(html, {
+              document: window.document,
+              url: decodedUrl
+            });
+            
+            // Apply to page
             document.open();
             document.write(rewritten);
             document.close();
-          } else {
-            throw new Error('Failed to fetch: ' + result.status);
+            
+          } catch (error) {
+            console.error('UV Error:', error);
+            showError(
+              'Failed to load through UV proxy.',
+              'Error: ' + error.message + '\\n' +
+              'Check if UV scripts are properly loaded.'
+            );
           }
-          
-        } catch (error) {
-          console.error('UV Error:', error);
-          document.getElementById('uv-error').style.display = 'block';
-          document.getElementById('uv-error').innerHTML = 
-            '<h3>UV Proxy Error</h3>' +
-            '<p>' + error.message + '</p>' +
-            '<p><a href="/" style="color: white; text-decoration: underline;">Return to browser</a></p>';
-          document.getElementById('content').innerHTML = '';
         }
+        
+        // Start UV initialization
+        setTimeout(initUV, 100);
+        
       })();
     </script>
   </body>
@@ -158,39 +296,51 @@ app.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'OK',
     service: 'UV Proxy',
+    uv: true,
+    bare: true,
     timestamp: new Date().toISOString()
   });
 });
 
-// Test UV directly
-app.get('/test-uv', (req, res) => {
-  const url = req.query.url || 'https://www.google.com';
+// UV redirect test
+app.get('/uv-redirect', (req, res) => {
+  const url = req.query.url || 'https://www.youtube.com';
   
   const html = `
   <!DOCTYPE html>
   <html>
   <head>
-    <title>Test UV</title>
+    <title>UV Redirect</title>
     <script>
-      // Load UV
-      const uvScript = document.createElement('script');
-      uvScript.src = '/uv/uv.bundle.js';
-      uvScript.onload = function() {
-        const configScript = document.createElement('script');
-        configScript.src = '/uv/uv.config.js';
-        configScript.onload = function() {
-          if (window.Ultraviolet && window.Ultraviolet.codec) {
-            const encoded = Ultraviolet.codec.xor.encode('${url}');
-            window.location.href = '/uv/service/' + encoded;
-          }
+      // Load UV and redirect
+      function loadAndRedirect() {
+        const uvBundle = document.createElement('script');
+        uvBundle.src = '/uv/uv.bundle.js';
+        uvBundle.onload = function() {
+          const uvConfig = document.createElement('script');
+          uvConfig.src = '/uv/uv.config.js';
+          uvConfig.onload = function() {
+            if (window.Ultraviolet && window.Ultraviolet.codec) {
+              try {
+                const encoded = Ultraviolet.codec.xor.encode('${url}');
+                window.location.href = '/uv/service/' + encoded;
+              } catch(e) {
+                document.body.innerHTML = '<h1>Encoding Error</h1><p>' + e.message + '</p>';
+              }
+            } else {
+              document.body.innerHTML = '<h1>UV Not Loaded</h1>';
+            }
+          };
+          document.head.appendChild(uvConfig);
         };
-        document.head.appendChild(configScript);
-      };
-      document.head.appendChild(uvScript);
+        document.head.appendChild(uvBundle);
+      }
+      
+      document.addEventListener('DOMContentLoaded', loadAndRedirect);
     </script>
   </head>
   <body>
-    Testing UV redirect to ${url}...
+    <p>Redirecting to ${url} via UV...</p>
   </body>
   </html>
   `;
@@ -207,10 +357,10 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
   console.log(`
 ========================================
-🚀 UV Proxy Server
+✅ UV Proxy Server Running
 📍 Port: ${PORT}
 🔗 UV Service: /uv/service/
-🧪 Test: http://localhost:${PORT}/test-uv?url=https://google.com
+🧪 Test: http://localhost:${PORT}/uv-redirect?url=https://youtube.com
 🏠 Browser: http://localhost:${PORT}
 ========================================
   `);
