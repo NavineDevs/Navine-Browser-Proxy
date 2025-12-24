@@ -1,24 +1,27 @@
-const express = require("express");
-const ultraviolet = require("@titaniumnetwork-dev/ultraviolet");
+// Import the express module
+const express = require('express');
 
-console.log("Ultraviolet export:", ultraviolet);
-
+// Create an instance of express
 const app = express();
 
-// Use ultraviolet as middleware
-if (typeof ultraviolet === "function") {
-    app.use("/uv", ultraviolet);
-} else if (ultraviolet && typeof ultraviolet.middleware === "function") {
-    app.use("/uv", ultraviolet.middleware);
-} else {
-    console.error("Unexpected ultraviolet export. Please check the documentation.");
-}
+// Define route for /service/ (the root of service)
+app.get('/service/', (req, res) => {
+  res.send('Welcome to the Service Root Endpoint');
+});
 
-// Serve static files from 'public' directory
-app.use(express.static("public"));
+// Define route for /service/:id (dynamic service ID)
+app.get('/service/:id', (req, res) => {
+  const serviceId = req.params.id;
+  res.send(`Requested Service ID: ${serviceId}`);
+});
 
-// Start server
-const PORT = process.env.PORT || 3000;
+// Optional: catch-all route for unmatched paths
+app.use((req, res) => {
+  res.status(404).send('404 Not Found');
+});
+
+// Start the server on port 3000
+const PORT = 3000;
 app.listen(PORT, () => {
-    console.log(`Server listening on port ${PORT}`);
+  console.log(`Server is running and listening on port ${PORT}`);
 });
