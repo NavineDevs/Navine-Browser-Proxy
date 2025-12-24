@@ -16,7 +16,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Serve UV files
 app.use('/uv', express.static(uvPath));
 
-// Handle bare server requests
+// Handle bare server
 app.use((req, res, next) => {
   if (req.url.startsWith('/bare/')) {
     bareServer.handleRequest(req, res);
@@ -25,20 +25,19 @@ app.use((req, res, next) => {
   }
 });
 
-// CRITICAL FIX: Handle UV service routes with wildcard
-// This catches ALL /service/* requests including those with special characters
+// UV service endpoint - Proper implementation
 app.get('/service/*', (req, res) => {
-  // Get the full path after /service/
-  const fullPath = req.path;
-  const encoded = fullPath.substring('/service/'.length);
+  // Get the encoded part
+  const encoded = req.params[0];
   
-  console.log('UV Service request:', { encoded, fullPath });
+  console.log('UV Service request for:', encoded);
   
+  // Serve a page that will use UV to decode and load
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
-      <base href="/" />
+      <base href="/service/" />
       <script src="/uv/uv.bundle.js"></script>
       <script src="/uv/uv.config.js"></script>
       <link rel="stylesheet" href="/uv/uv.css">
@@ -49,71 +48,67 @@ app.get('/service/*', (req, res) => {
           font-family: Arial, sans-serif;
           background: #f5f5f5;
         }
+        .loading {
+          text-align: center;
+          padding: 40px;
+        }
         .error {
           color: #d32f2f;
           background: #ffebee;
-          padding: 15px;
+          padding: 20px;
           border-radius: 5px;
           margin: 20px 0;
         }
       </style>
     </head>
     <body>
-      <div id="content">
-        <h2>Loading via UV Proxy...</h2>
-        <p>If this takes too long, there might be an error.</p>
+      <div id="app">
+        <div class="loading">
+          <h2>Loading via UV Proxy...</h2>
+          <p>Please wait while we connect to the destination.</p>
+        </div>
       </div>
       
       <script>
-        (async function() {
+        (function() {
           try {
-            // Wait for UV to load
-            if (!window.Ultraviolet) {
-              throw new Error('Ultraviolet not loaded');
+            // Check if UV is loaded
+            if (!window.__uv$config) {
+              throw new Error('UV configuration not loaded');
             }
             
-            // Get encoded URL from path
-            const currentPath = window.location.pathname;
+            // Get the encoded URL from the path
+            const path = window.location.pathname;
             const prefix = '/service/';
-            const encodedUrl = currentPath.substring(prefix.length);
+            const encodedUrl = path.substring(prefix.length);
             
-            console.log('Encoded URL from path:', encodedUrl);
-            
-            // Set up UV config
-            const uvConfig = {
-              prefix: '/service/',
-              bare: '/bare/',
-              encodeUrl: Ultraviolet.codec.xor.encode,
-              decodeUrl: Ultraviolet.codec.xor.decode,
-              handler: '/uv/uv.handler.js',
-              bundle: '/uv/uv.bundle.js',
-              config: '/uv/uv.config.js',
-              client: '/uv/uv.client.js',
-              sw: '/uv/uv.sw.js'
-            };
+            console.log('Encoded URL:', encodedUrl);
             
             // Decode the URL
-            const decodedUrl = uvConfig.decodeUrl(encodedUrl);
+            const decodedUrl = __uv$config.decodeUrl(encodedUrl);
             console.log('Decoded URL:', decodedUrl);
             
-            // Create UV instance
-            const uv = new UVServiceWorker();
-            uv.mount(uvConfig);
+            // Use UV's built-in navigation
+            // This will automatically handle the proxying
+            const uv = new Ultraviolet(__uv$config);
             
-            // Try to navigate using UV
-            await uv.fetch(decodedUrl)
-              .then(response => response.text())
-              .then(data => {
-                // UV will handle rewriting automatically
-                document.open();
-                document.write(data);
-                document.close();
-              });
-              
+            // Create a script that loads the UV handler
+            const script = document.createElement('script');
+            script.src = __uv$config.handler;
+            script.onload = function() {
+              // UV handler is loaded, now navigate
+              window.navigate(decodedUrl);
+            };
+            script.onerror = function() {
+              throw new Error('Failed to load UV handler');
+            };
+            document.head.appendChild(script);
+            
           } catch(error) {
-            console.error('UV Proxy Error:', error);
-            document.getElementById('content').innerHTML = 
-              '<div class="error"><h3>Proxy Error</h3><p>' + error.message + '</p></div>';
+            console.error('UV Error:', error);
+            document.getElementById('app').innerHTML = 
+              '<div class="error"><h3>Proxy Error</h3><p>' + error.message + '</p>' +
+              '<p>Try <a href="/">returning to the homepage</a> or refreshing.</p></div>';
           }
         })();
       </script>
@@ -122,87 +117,73 @@ app.get('/service/*', (req, res) => {
   `);
 });
 
-// SIMPLE UV TEST - This should work
-app.get('/uv-test', (req, res) => {
-  const testUrl = 'https://www.google.com';
-  
-  // Manually encode with URL-safe base64
-  const encoded = Buffer.from(testUrl).toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
+// Simple direct proxy test
+app.get('/test-proxy', (req, res) => {
+  const url = req.query.url || 'https://www.google.com';
   
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
-      <title>UV Test</title>
+      <title>Proxy Test</title>
       <script src="/uv/uv.bundle.js"></script>
+      <script src="/uv/uv.config.js"></script>
       <script>
-        // Simple test that bypasses XOR encoding issues
         document.addEventListener('DOMContentLoaded', function() {
-          const iframe = document.createElement('iframe');
-          iframe.style = 'width: 100%; height: 100vh; border: none;';
-          iframe.src = '/service/${encoded}?type=base64';
-          document.body.appendChild(iframe);
+          try {
+            if (window.__uv$config && window.Ultraviolet) {
+              const encoded = Ultraviolet.codec.xor.encode('${url}');
+              // Create iframe that loads the UV proxy
+              const iframe = document.createElement('iframe');
+              iframe.style = 'width: 100%; height: 100vh; border: none;';
+              iframe.src = '/service/' + encoded;
+              document.body.appendChild(iframe);
+            } else {
+              document.body.innerHTML = '<h1>UV Not Loaded</h1>';
+            }
+          } catch(error) {
+            document.body.innerHTML = '<h1>Error</h1><p>' + error.message + '</p>';
+          }
         });
       </script>
     </head>
     <body>
-      Testing UV proxy...
+      Testing proxy for ${url}...
     </body>
     </html>
   `);
 });
 
-// Alternative: Use base64 encoding instead of XOR
-app.get('/service-base64/*', (req, res) => {
-  const encoded = req.params[0];
+// Working proxy using iframe with proper sandbox
+app.get('/proxy', (req, res) => {
+  const url = req.query.url || 'https://www.google.com';
   
-  try {
-    // Decode from URL-safe base64
-    const decoded = Buffer.from(
-      encoded.replace(/-/g, '+').replace(/_/g, '/'), 
-      'base64'
-    ).toString();
-    
-    console.log('Base64 proxy request:', decoded);
-    
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <script src="/uv/uv.bundle.js"></script>
-        <script>
-          // Use UV with this specific URL
-          const uv = new UVServiceWorker();
-          const config = {
-            prefix: '/service/',
-            bare: '/bare/',
-            handler: '/uv/uv.handler.js'
-          };
-          uv.mount(config);
-          
-          // Navigate to the decoded URL
-          window.location.href = config.prefix + Ultraviolet.codec.xor.encode('${decoded}');
-        </script>
-      </head>
-      <body>
-        Redirecting...
-      </body>
-      </html>
-    `);
-    
-  } catch(error) {
-    res.status(400).send('Invalid base64 encoding');
-  }
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>${new URL(url).hostname}</title>
+      <style>
+        body, html { margin: 0; padding: 0; overflow: hidden; height: 100%; }
+        iframe { width: 100%; height: 100%; border: none; }
+      </style>
+    </head>
+    <body>
+      <iframe 
+        src="${url}" 
+        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
+        allow="fullscreen"
+        referrerpolicy="no-referrer">
+      </iframe>
+    </body>
+    </html>
+  `);
 });
 
-// Health check for Render
+// Health check
 app.get('/health', (req, res) => {
   res.status(200).json({ 
-    status: 'OK', 
-    service: 'Navine Browser',
+    status: 'OK',
     timestamp: new Date().toISOString(),
     uv: fs.existsSync(path.join(uvPath, 'uv.bundle.js'))
   });
@@ -213,38 +194,22 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Catch-all route
+// Catch-all
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// Error handling
-app.use((err, req, res, next) => {
-  console.error('Server error:', err);
-  res.status(500).send(`
-    <h1>Server Error</h1>
-    <p>${err.message}</p>
-    <a href="/">Return Home</a>
-  `);
 });
 
 // Start server
 app.listen(PORT, () => {
   console.log(`
 ========================================
-🚀 Navine Browser UV Proxy
+🚀 Navine Browser Proxy
 📍 Port: ${PORT}
+📡 UV Status: ${fs.existsSync(path.join(uvPath, 'uv.bundle.js')) ? '✅' : '❌'}
 🔗 Health: http://localhost:${PORT}/health
-🧪 UV Test: http://localhost:${PORT}/uv-test
-🏠 Main: http://localhost:${PORT}
+🧪 Proxy Test: http://localhost:${PORT}/test-proxy
+🌐 Direct Proxy: http://localhost:${PORT}/proxy?url=https://google.com
+🏠 Main App: http://localhost:${PORT}
 ========================================
   `);
-  
-  // Check UV files
-  const uvBundlePath = path.join(uvPath, 'uv.bundle.js');
-  if (fs.existsSync(uvBundlePath)) {
-    console.log('✅ UV files found at:', uvPath);
-  } else {
-    console.warn('⚠️  UV bundle not found at:', uvBundlePath);
-  }
 });
