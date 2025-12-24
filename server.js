@@ -1,6 +1,6 @@
 const express = require("express");
 const { Ultraviolet } = require("@titaniumnetwork-dev/ultraviolet");
-const createBareServer = require("@tomphttp/bare-server-node");
+const { createBareServer } = require("@tomphttp/bare-server-node");
 
 const app = express();
 
@@ -13,7 +13,7 @@ const uv = new Ultraviolet({
   bare: "/bare/"
 });
 
-// Handle Bare requests
+// Route Bare requests
 app.use((req, res, next) => {
   if (bare.shouldRoute(req)) {
     bare.routeRequest(req, res);
