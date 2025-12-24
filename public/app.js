@@ -1,4 +1,4 @@
-// public/app.js - Works with UV on Render
+// public/app.js - Working UV browser
 const urlInput = document.getElementById("urlInput");
 const goBtn = document.getElementById("goBtn");
 const iframe = document.getElementById("browser");
@@ -10,7 +10,10 @@ let currentTabId = null;
 
 // Initialize
 function init() {
-  console.log('Initializing Navine Browser...');
+  console.log('Initializing browser...');
+  
+  // Load UV config
+  loadUVConfig();
   
   // Create first tab
   createTab();
@@ -22,96 +25,119 @@ function init() {
   });
   newTabBtn.addEventListener("click", () => createTab());
   
-  // Check if UV is loaded
-  checkUV();
-  
-  // Add quick nav
+  // Add quick navigation
   addQuickNav();
 }
 
-// Check UV status
-function checkUV() {
-  setTimeout(() => {
-    if (!window.Ultraviolet) {
-      console.warn('UV not loaded, using fallback');
-      document.getElementById('status').innerHTML = 
-        '<div style="color: orange; padding: 5px;">Using simple proxy mode</div>';
-    } else {
-      console.log('UV loaded successfully');
-    }
-  }, 1000);
-}
-
-// Navigate using UV with URL-safe encoding
-function navigate() {
-  const raw = urlInput.value.trim();
-  if (!raw) return;
-  
-  let url;
-  try {
-    // Format the URL
-    if (!raw.startsWith('http://') && !raw.startsWith('https://')) {
-      if (raw.includes('.') && !raw.includes(' ')) {
-        url = 'https://' + raw;
-      } else {
-        url = 'https://www.google.com/search?q=' + encodeURIComponent(raw);
-      }
-    } else {
-      url = raw;
-    }
-    
-    // Validate
-    new URL(url);
-  } catch (error) {
-    alert('Invalid URL: ' + error.message);
+// Load UV configuration
+function loadUVConfig() {
+  // Check if UV is already loaded
+  if (window.__uv$config) {
+    console.log('UV config already loaded');
     return;
   }
   
-  console.log('Target URL:', url);
+  // Load UV scripts
+  const uvScripts = [
+    '/uv/uv.bundle.js',
+    '/uv/uv.config.js'
+  ];
   
-  // Method 1: Try using UV if available
-  if (window.Ultraviolet && window.Ultraviolet.codec) {
-    try {
-      const encoded = Ultraviolet.codec.xor.encode(url);
-      // URL encode the encoded string to make it URL-safe
-      const urlSafeEncoded = encodeURIComponent(encoded);
-      const proxiedUrl = `/service/${urlSafeEncoded}`;
-      
-      console.log('Proxied URL (UV):', proxiedUrl);
-      iframe.src = proxiedUrl;
-      
-    } catch (error) {
-      console.warn('UV encoding failed, using base64:', error);
-      useBase64Proxy(url);
-    }
-  } else {
-    // Method 2: Use base64 fallback
-    useBase64Proxy(url);
-  }
+  uvScripts.forEach(src => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = false;
+    document.head.appendChild(script);
+  });
   
-  // Update current tab
-  if (currentTabId) {
-    const tab = tabs.find(t => t.id === currentTabId);
-    if (tab) {
-      tab.url = url;
-      updateTabDisplay(tab);
+  console.log('UV scripts loading...');
+}
+
+// Format URL
+function formatUrl(input) {
+  input = input.trim();
+  if (!input) return '';
+  
+  // Check if it's already a valid URL
+  try {
+    new URL(input);
+    return input;
+  } catch {
+    // If it looks like a domain
+    if (input.includes('.') && !input.includes(' ')) {
+      return 'https://' + input;
     }
+    // Otherwise treat as search
+    return 'https://www.google.com/search?q=' + encodeURIComponent(input);
   }
 }
 
-// Fallback method using base64
-function useBase64Proxy(url) {
-  // Convert to URL-safe base64
-  const base64 = btoa(encodeURIComponent(url))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
+// Navigate using UV
+async function navigate() {
+  const raw = urlInput.value.trim();
+  if (!raw) return;
   
-  const proxiedUrl = `/service-base64/${base64}`;
-  console.log('Proxied URL (Base64):', proxiedUrl);
-  iframe.src = proxiedUrl;
+  const url = formatUrl(raw);
+  console.log('Navigating to:', url);
+  
+  try {
+    // Validate URL
+    new URL(url);
+    
+    // Try UV proxy first
+    if (window.Ultraviolet && window.Ultraviolet.codec) {
+      await navigateWithUV(url);
+    } else {
+      // Fallback to direct iframe
+      navigateDirect(url);
+    }
+    
+    // Update current tab
+    if (currentTabId) {
+      const tab = tabs.find(t => t.id === currentTabId);
+      if (tab) {
+        tab.url = url;
+        updateTabDisplay(tab);
+      }
+    }
+    
+  } catch (error) {
+    console.error('Navigation error:', error);
+    alert('Error: ' + error.message);
+  }
 }
 
+// Navigate using Ultraviolet
+async function navigateWithUV(url) {
+  console.log('Using UV proxy...');
+  
+  try {
+    // Encode the URL
+    const encoded = Ultraviolet.codec.xor.encode(url);
+    console.log('Encoded:', encoded);
+    
+    // Create the proxied URL
+    const proxiedUrl = '/service/' + encodeURIComponent(encoded);
+    console.log('Proxied URL:', proxiedUrl);
+    
+    // Load in iframe
+    iframe.src = proxiedUrl;
+    
+  } catch (error) {
+    console.warn('UV proxy failed, falling back:', error);
+    navigateDirect(url);
+  }
+}
+
+// Navigate directly (fallback)
+function navigateDirect(url) {
+  console.log('Using direct iframe...');
+  
+  // Use the simple proxy endpoint
+  iframe.src = '/proxy?url=' + encodeURIComponent(url);
+}
+
+// Tab management functions
 function createTab(url = 'about:blank') {
   const tabId = Date.now().toString();
   
@@ -155,7 +181,16 @@ function switchTab(tabId) {
   
   // Update iframe
   if (tab.url !== 'about:blank') {
-    iframe.src = `/frame?url=${encodeURIComponent(tab.url)}`;
+    if (window.Ultraviolet) {
+      try {
+        const encoded = Ultraviolet.codec.xor.encode(tab.url);
+        iframe.src = '/service/' + encodeURIComponent(encoded);
+      } catch {
+        iframe.src = '/proxy?url=' + encodeURIComponent(tab.url);
+      }
+    } else {
+      iframe.src = '/proxy?url=' + encodeURIComponent(tab.url);
+    }
   } else {
     iframe.src = '';
   }
@@ -212,10 +247,11 @@ function addQuickNav() {
   const quickNav = document.createElement('div');
   quickNav.className = 'quick-nav';
   quickNav.innerHTML = `
-    <button onclick="goTo('https://www.google.com')">Google</button>
-    <button onclick="goTo('https://www.wikipedia.org')">Wikipedia</button>
-    <button onclick="goTo('https://www.youtube.com')">YouTube</button>
-    <button onclick="goTo('https://example.com')">Example</button>
+    <button onclick="quickNav('https://www.google.com')">Google</button>
+    <button onclick="quickNav('https://www.wikipedia.org')">Wikipedia</button>
+    <button onclick="quickNav('https://www.youtube.com')">YouTube</button>
+    <button onclick="quickNav('https://example.com')">Example</button>
+    <button onclick="quickNav('https://duckduckgo.com')">DuckDuckGo</button>
   `;
   
   const omnibox = document.querySelector('.omnibox');
@@ -224,14 +260,14 @@ function addQuickNav() {
   }
 }
 
-function goTo(url) {
+function quickNav(url) {
   urlInput.value = url;
   navigate();
 }
 
-// Initialize on load
+// Initialize when page loads
 document.addEventListener('DOMContentLoaded', init);
 
 // Global functions
-window.goTo = goTo;
+window.quickNav = quickNav;
 window.navigate = navigate;
