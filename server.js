@@ -7,8 +7,8 @@ const app = express();
 // Bare server
 const bare = createBareServer("/bare/");
 
-// Ultraviolet constructor (DEFAULT EXPORT)
-const uv = new Ultraviolet({
+// Ultraviolet middleware (calling the function directly)
+const uv = Ultraviolet({
   prefix: "/uv/",
   bare: "/bare/"
 });
