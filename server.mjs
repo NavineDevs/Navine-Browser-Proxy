@@ -1,7 +1,8 @@
-const express = require("express");
-const { Ultraviolet } = require("@titaniumnetwork-dev/ultraviolet");
+import express from "express";
+import { Ultraviolet } from "@titaniumnetwork-dev/ultraviolet";
 
 const app = express();
+
 const uv = new Ultraviolet({
   prefix: "/uv/",
   bare: "/bare/",
@@ -12,10 +13,10 @@ const uv = new Ultraviolet({
 // Ultraviolet middleware
 app.use("/uv/", uv.middleware);
 
-// Static files (frontend)
+// Static files
 app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("Ultraviolet running on port " + PORT);
+  console.log(`Ultraviolet running on port ${PORT}`);
 });
