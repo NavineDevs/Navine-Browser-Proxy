@@ -1,19 +1,17 @@
 import express from "express";
 import pkg from "@titaniumnetwork-dev/ultraviolet";
 
-// Destructure from CommonJS default export
 const { Ultraviolet } = pkg;
 
 const app = express();
 
+// Create Ultraviolet instance (NO codec config)
 const uv = new Ultraviolet({
   prefix: "/uv/",
-  bare: "/bare/",
-  encodeUrl: Ultraviolet.codec.xor.encode,
-  decodeUrl: Ultraviolet.codec.xor.decode
+  bare: "/bare/"
 });
 
-// Mount Ultraviolet
+// Mount Ultraviolet middleware
 app.use("/uv/", uv.middleware);
 
 // Serve static frontend
