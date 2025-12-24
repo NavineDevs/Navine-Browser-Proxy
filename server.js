@@ -1,14 +1,14 @@
 const express = require("express");
-const Ultraviolet = require("@titaniumnetwork-dev/ultraviolet");
+const { Ultraviolet } = require("@titaniumnetwork-dev/ultraviolet");
 const { createBareServer } = require("@tomphttp/bare-server-node");
 
 const app = express();
 
-// Bare server
+// Bare server setup
 const bare = createBareServer("/bare/");
 
-// Ultraviolet middleware (calling the function directly)
-const uv = Ultraviolet({
+// Initialize Ultraviolet with 'new' since it's a class
+const uv = new Ultraviolet({
   prefix: "/uv/",
   bare: "/bare/"
 });
@@ -22,10 +22,10 @@ app.use((req, res, next) => {
   }
 });
 
-// Ultraviolet middleware
+// Use Ultraviolet middleware
 app.use("/uv/", uv.middleware);
 
-// Static frontend
+// Static frontend files
 app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
