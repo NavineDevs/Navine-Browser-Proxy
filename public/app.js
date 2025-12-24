@@ -1,4 +1,4 @@
-// public/app.js - Fast working browser
+// public/app.js - Using /uv/service/
 const urlInput = document.getElementById("urlInput");
 const goBtn = document.getElementById("goBtn");
 const iframe = document.getElementById("browser");
@@ -10,7 +10,10 @@ let currentTabId = null;
 
 // Initialize
 function init() {
-  console.log('🚀 Browser starting...');
+  console.log('🚀 Initializing UV Browser...');
+  
+  // Load UV configuration first
+  loadUV();
   
   // Create first tab
   createTab();
@@ -22,42 +25,103 @@ function init() {
   });
   newTabBtn.addEventListener("click", () => createTab());
   
-  // Add quick nav
-  addQuickNav();
+  // Add status indicator
+  addStatusBar();
   
-  // Set focus to URL input
+  // Focus URL input
   setTimeout(() => {
     urlInput.focus();
     urlInput.select();
-  }, 100);
-  
-  console.log('✅ Browser ready');
+  }, 500);
 }
 
-// Navigate - FAST & RELIABLE
+// Load UV scripts
+function loadUV() {
+  // Check if already loaded
+  if (window.__uv$config) {
+    console.log('UV config already loaded');
+    updateStatus('UV: Ready');
+    return;
+  }
+  
+  updateStatus('UV: Loading...');
+  
+  // Load UV bundle and config
+  const scripts = [
+    '/uv/uv.bundle.js',
+    '/uv/uv.config.js'
+  ];
+  
+  let loaded = 0;
+  
+  scripts.forEach(src => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = () => {
+      loaded++;
+      console.log(`Loaded: ${src}`);
+      
+      if (loaded === scripts.length) {
+        if (window.__uv$config) {
+          console.log('UV config loaded:', window.__uv$config);
+          updateStatus('UV: Ready');
+        } else {
+          console.error('UV config not found after loading scripts');
+          updateStatus('UV: Config missing');
+        }
+      }
+    };
+    script.onerror = () => {
+      console.error(`Failed to load: ${src}`);
+      updateStatus(`UV: Failed to load ${src.split('/').pop()}`);
+    };
+    document.head.appendChild(script);
+  });
+  
+  // Check after timeout
+  setTimeout(() => {
+    if (!window.__uv$config) {
+      console.warn('UV not loaded after timeout, using fallback');
+      updateStatus('UV: Using fallback mode');
+    }
+  }, 3000);
+}
+
+// Navigate using UV
 function navigate() {
   const raw = urlInput.value.trim();
   if (!raw) return;
   
   let url;
   
-  // Format the URL
+  // Format URL
   if (!raw.startsWith('http://') && !raw.startsWith('https://')) {
     if (raw.includes('.') && !raw.includes(' ')) {
       url = 'https://' + raw;
     } else {
-      // Google search
       url = 'https://www.google.com/search?q=' + encodeURIComponent(raw);
     }
   } else {
     url = raw;
   }
   
-  console.log('🌐 Navigating to:', url);
+  console.log('🌐 Target:', url);
   
-  // Use the fast proxy endpoint
-  const encoded = btoa(url);
-  iframe.src = `/p/${encoded}`;
+  // Validate URL
+  try {
+    new URL(url);
+  } catch {
+    alert('Invalid URL');
+    return;
+  }
+  
+  // Try UV first
+  if (window.Ultraviolet && window.Ultraviolet.codec) {
+    navigateUV(url);
+  } else {
+    // Fallback
+    navigateFallback(url);
+  }
   
   // Update current tab
   if (currentTabId) {
@@ -67,6 +131,43 @@ function navigate() {
       updateTabDisplay(tab);
     }
   }
+}
+
+// Navigate using Ultraviolet
+function navigateUV(url) {
+  console.log('Using UV proxy...');
+  updateStatus('UV: Encoding...');
+  
+  try {
+    // Encode URL with UV XOR
+    const encoded = Ultraviolet.codec.xor.encode(url);
+    console.log('Encoded:', encoded.substring(0, 50) + '...');
+    
+    // URL encode for safety
+    const urlSafeEncoded = encodeURIComponent(encoded);
+    
+    // Build UV service URL
+    const uvUrl = `/uv/service/${urlSafeEncoded}`;
+    console.log('UV URL:', uvUrl);
+    
+    updateStatus('UV: Loading...');
+    iframe.src = uvUrl;
+    
+  } catch (error) {
+    console.error('UV encoding failed:', error);
+    updateStatus('UV: Failed, using fallback');
+    navigateFallback(url);
+  }
+}
+
+// Fallback navigation
+function navigateFallback(url) {
+  console.log('Using fallback proxy...');
+  updateStatus('Proxy: Loading...');
+  
+  // Simple base64 proxy
+  const encoded = btoa(url);
+  iframe.src = `/proxy/${encoded}`;
 }
 
 // Tab management
@@ -113,8 +214,19 @@ function switchTab(tabId) {
   
   // Update iframe
   if (tab.url !== 'about:blank') {
-    const encoded = btoa(tab.url);
-    iframe.src = `/p/${encoded}`;
+    if (window.Ultraviolet && window.Ultraviolet.codec) {
+      try {
+        const encoded = Ultraviolet.codec.xor.encode(tab.url);
+        const urlSafe = encodeURIComponent(encoded);
+        iframe.src = `/uv/service/${urlSafe}`;
+      } catch {
+        const encoded = btoa(tab.url);
+        iframe.src = `/proxy/${encoded}`;
+      }
+    } else {
+      const encoded = btoa(tab.url);
+      iframe.src = `/proxy/${encoded}`;
+    }
   } else {
     iframe.src = '';
   }
@@ -137,12 +249,12 @@ function updateTabDisplay(tab) {
       const urlObj = new URL(tab.url);
       displayText = urlObj.hostname.replace('www.', '');
       
-      // Shorten if too long
-      if (displayText.length > 20) {
-        displayText = displayText.substring(0, 17) + '...';
+      // Shorten
+      if (displayText.length > 18) {
+        displayText = displayText.substring(0, 15) + '...';
       }
     } catch {
-      displayText = 'Web Page';
+      displayText = 'Page';
     }
   }
   
@@ -169,18 +281,72 @@ function closeTab(tabId) {
   }
 }
 
+// Status bar
+function addStatusBar() {
+  const statusBar = document.createElement('div');
+  statusBar.id = 'statusBar';
+  statusBar.style.cssText = `
+    padding: 4px 12px;
+    background: #f5f5f5;
+    border-top: 1px solid #ddd;
+    font-size: 12px;
+    color: #666;
+    font-family: monospace;
+  `;
+  statusBar.textContent = 'Initializing...';
+  
+  // Insert after iframe
+  const body = document.querySelector('body');
+  if (body) {
+    body.appendChild(statusBar);
+  }
+}
+
+function updateStatus(message) {
+  const statusBar = document.getElementById('statusBar');
+  if (statusBar) {
+    statusBar.textContent = message;
+    console.log('Status:', message);
+  }
+}
+
+// Add quick navigation
 function addQuickNav() {
   const quickNav = document.createElement('div');
-  quickNav.className = 'quick-nav';
-  quickNav.innerHTML = `
-    <div style="display: flex; gap: 8px; padding: 8px; background: #f5f5f5;">
-      <span style="color: #666; font-size: 12px; padding: 6px 0;">Quick Links:</span>
-      <button onclick="goQuick('https://www.google.com')" style="padding: 6px 12px; background: white; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 13px;">Google</button>
-      <button onclick="goQuick('https://www.wikipedia.org')" style="padding: 6px 12px; background: white; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 13px;">Wikipedia</button>
-      <button onclick="goQuick('https://www.youtube.com')" style="padding: 6px 12px; background: white; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 13px;">YouTube</button>
-      <button onclick="goQuick('https://example.com')" style="padding: 6px 12px; background: white; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 13px;">Example</button>
-    </div>
+  quickNav.style.cssText = `
+    display: flex;
+    gap: 8px;
+    padding: 8px 12px;
+    background: #f8f9fa;
+    border-bottom: 1px solid #e0e0e0;
   `;
+  
+  quickNav.innerHTML = `
+    <span style="color: #666; font-size: 12px; padding: 6px 0;">Quick:</span>
+    <button onclick="quickGo('https://www.google.com')" class="quick-btn">Google</button>
+    <button onclick="quickGo('https://www.wikipedia.org')" class="quick-btn">Wikipedia</button>
+    <button onclick="quickGo('https://www.youtube.com')" class="quick-btn">YouTube</button>
+    <button onclick="quickGo('https://example.com')" class="quick-btn">Example</button>
+  `;
+  
+  // Add CSS for quick buttons
+  const style = document.createElement('style');
+  style.textContent = `
+    .quick-btn {
+      padding: 6px 12px;
+      background: white;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      color: #3c4043;
+    }
+    .quick-btn:hover {
+      background: #f8f9fa;
+      border-color: #d2e3fc;
+    }
+  `;
+  document.head.appendChild(style);
   
   // Insert after omnibox
   const omnibox = document.querySelector('.omnibox');
@@ -189,7 +355,7 @@ function addQuickNav() {
   }
 }
 
-function goQuick(url) {
+function quickGo(url) {
   urlInput.value = url;
   navigate();
 }
@@ -198,5 +364,5 @@ function goQuick(url) {
 document.addEventListener('DOMContentLoaded', init);
 
 // Global functions
-window.goQuick = goQuick;
+window.quickGo = quickGo;
 window.navigate = navigate;
