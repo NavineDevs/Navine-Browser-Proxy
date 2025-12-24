@@ -1,23 +1,21 @@
 import express from "express";
-import pkg from "@titaniumnetwork-dev/ultraviolet";
-
-const { Ultraviolet } = pkg;
+import ultraviolet from "@titaniumnetwork-dev/ultraviolet";
 
 const app = express();
 
-// Create Ultraviolet instance (NO codec config)
-const uv = new Ultraviolet({
+// Create UV server using the factory
+const uv = ultraviolet.createServer({
   prefix: "/uv/",
   bare: "/bare/"
 });
 
-// Mount Ultraviolet middleware
-app.use("/uv/", uv.middleware);
+// Mount Ultraviolet
+app.use("/uv/", uv);
 
-// Serve static frontend
+// Static frontend
 app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Ultraviolet running on port ${PORT}`);
+  console.log("Ultraviolet running on port " + PORT);
 });
