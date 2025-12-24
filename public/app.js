@@ -1,3 +1,4 @@
+// public/app.js - Updated version
 const urlInput = document.getElementById("urlInput");
 const goBtn = document.getElementById("goBtn");
 const iframe = document.getElementById("browser");
@@ -6,6 +7,21 @@ const newTabBtn = document.getElementById("newTab");
 
 let tabs = [];
 let currentTabId = null;
+
+// Initialize UV if available
+let uvConfig = null;
+if (window.__uv$config) {
+  uvConfig = window.__uv$config;
+} else {
+  console.warn('UV config not loaded, fetching...');
+  fetch('/uv-config')
+    .then(res => res.json())
+    .then(config => {
+      uvConfig = config;
+      console.log('UV config loaded:', config);
+    })
+    .catch(err => console.error('Failed to load UV config:', err));
+}
 
 function isUrl(value) {
   try {
@@ -18,28 +34,52 @@ function isUrl(value) {
 
 function formatInput(input) {
   input = input.trim();
-  
   if (isUrl(input)) return input;
-  
   if (input.includes('.') && !input.includes(' ')) {
     return 'https://' + input;
   }
-  
   return 'https://www.google.com/search?q=' + encodeURIComponent(input);
+}
+
+function navigate() {
+  if (!uvConfig) {
+    alert("Ultraviolet not loaded. Please wait...");
+    return;
+  }
+
+  const raw = urlInput.value.trim();
+  if (!raw) return;
+
+  const target = formatInput(raw);
+  
+  // Encode URL for UV
+  const encoded = uvConfig.encodeUrl(target);
+  const proxiedUrl = uvConfig.prefix + encoded;
+  
+  console.log('Navigating to:', target, 'via:', proxiedUrl);
+  
+  // Update iframe
+  iframe.src = proxiedUrl;
+  
+  // Update current tab
+  if (currentTabId) {
+    const tab = tabs.find(t => t.id === currentTabId);
+    if (tab) {
+      tab.url = target;
+      tab.proxiedUrl = proxiedUrl;
+      updateTabDisplay(tab);
+    }
+  }
 }
 
 function createTab(url = 'about:blank') {
   const tabId = Date.now().toString();
-
-  // Create tab button
+  
   const tabBtn = document.createElement('button');
   tabBtn.className = 'tab-btn';
   tabBtn.textContent = 'New Tab';
-
-  // Switch to tab on click
   tabBtn.onclick = () => switchTab(tabId);
 
-  // Create close button
   const closeBtn = document.createElement('button');
   closeBtn.className = 'close-btn';
   closeBtn.textContent = '×';
@@ -48,27 +88,25 @@ function createTab(url = 'about:blank') {
     closeTab(tabId);
   };
 
-  // Container for tab button and close button
   const tabDiv = document.createElement('div');
-  tabDiv.style.display = 'flex';
-  tabDiv.style.alignItems = 'center';
-  tabDiv.style.marginRight = '4px';
-
+  tabDiv.className = 'tab-container';
   tabDiv.appendChild(tabBtn);
   tabDiv.appendChild(closeBtn);
   tabsContainer.appendChild(tabDiv);
 
-  // Save tab info
-  tabs.push({ 
-    id: tabId, 
-    button: tabBtn, 
-    url: url, 
-    wrapper: tabDiv,
+  const tab = {
+    id: tabId,
+    button: tabBtn,
+    closeBtn: closeBtn,
+    container: tabDiv,
+    url: url,
+    proxiedUrl: url,
     title: 'New Tab'
-  });
-
-  // Switch to new tab
+  };
+  
+  tabs.push(tab);
   switchTab(tabId);
+  return tab;
 }
 
 function switchTab(tabId) {
@@ -76,34 +114,35 @@ function switchTab(tabId) {
   if (!tab) return;
 
   currentTabId = tabId;
-
-  // Update iframe src
-  iframe.src = tab.url;
-
+  
+  // Update iframe
+  iframe.src = tab.proxiedUrl;
+  
   // Update URL input
   urlInput.value = tab.url === 'about:blank' ? '' : tab.url;
-
-  // Update tab button styles
+  
+  // Update tab styles
   tabs.forEach(t => {
     t.button.classList.toggle('active', t.id === tabId);
-    // Truncate long URLs for display
-    const displayText = t.url === 'about:blank' ? t.title : 
-                       t.url.length > 30 ? t.url.substring(0, 27) + '...' : t.url;
-    t.button.textContent = displayText;
+    updateTabDisplay(t);
   });
+}
+
+function updateTabDisplay(tab) {
+  const displayText = tab.title.length > 20 
+    ? tab.title.substring(0, 17) + '...' 
+    : tab.title;
+  tab.button.textContent = displayText;
+  tab.button.title = tab.url;
 }
 
 function closeTab(tabId) {
   const index = tabs.findIndex(t => t.id === tabId);
   if (index === -1) return;
 
-  // Remove tab DOM element
-  tabs[index].wrapper.remove();
-
-  // Remove from array
+  tabs[index].container.remove();
   tabs.splice(index, 1);
 
-  // If current tab is closed, switch to another
   if (currentTabId === tabId) {
     if (tabs.length > 0) {
       switchTab(tabs[0].id);
@@ -111,85 +150,45 @@ function closeTab(tabId) {
       iframe.src = '';
       urlInput.value = '';
       currentTabId = null;
+      createTab();
     }
   }
 }
 
-function navigate() {
-  if (!window.__uv$config) {
-    alert("Ultraviolet not loaded");
-    return;
-  }
-
-  const raw = urlInput.value;
-  if (!raw) return;
-
-  const target = formatInput(raw);
-  const encoded = __uv$config.encodeUrl(target);
-
-  // Update current tab's URL
-  const currentTab = tabs.find(t => t.id === currentTabId);
-  if (currentTab) {
-    currentTab.url = target;
-    // Extract title from URL for display
-    try {
-      const urlObj = new URL(target);
-      currentTab.title = urlObj.hostname;
-    } catch {
-      currentTab.title = target;
-    }
-  }
-
-  iframe.src = __uv$config.prefix + encoded;
-}
-
-// Handle iframe load events to update tab titles
-iframe.addEventListener('load', function() {
-  if (currentTabId && iframe.contentWindow) {
-    try {
-      const tab = tabs.find(t => t.id === currentTabId);
-      if (tab && iframe.contentWindow.document.title) {
-        tab.title = iframe.contentWindow.document.title || tab.url;
-        // Update tab button text
-        const displayText = tab.title.length > 30 ? 
-                          tab.title.substring(0, 27) + '...' : 
-                          tab.title;
-        tab.button.textContent = displayText;
-      }
-    } catch (e) {
-      // Cross-origin restrictions, ignore
-    }
-  }
-});
-
-// Initialize with one tab
-createTab();
-
-// Event listeners
+// Event Listeners
 goBtn.addEventListener("click", navigate);
 urlInput.addEventListener("keydown", e => {
   if (e.key === "Enter") navigate();
 });
 newTabBtn.onclick = () => createTab();
 
-// Allow dragging tabs (optional enhancement)
-let draggedTab = null;
-
-tabsContainer.addEventListener('dragstart', (e) => {
-  if (e.target.classList.contains('tab-btn')) {
-    draggedTab = e.target;
-    e.dataTransfer.effectAllowed = 'move';
+// Iframe load handler to update tab title
+iframe.addEventListener('load', function() {
+  if (currentTabId && iframe.contentWindow) {
+    try {
+      const tab = tabs.find(t => t.id === currentTabId);
+      if (tab && iframe.contentWindow.document.title) {
+        tab.title = iframe.contentWindow.document.title || tab.url;
+        updateTabDisplay(tab);
+      }
+    } catch (e) {
+      // Cross-origin restriction
+    }
   }
 });
 
-tabsContainer.addEventListener('dragover', (e) => {
-  e.preventDefault();
-});
+// Initialize
+createTab();
 
-tabsContainer.addEventListener('drop', (e) => {
-  e.preventDefault();
-  if (draggedTab) {
-    // Reorder logic here
-    draggedTab = null;
-  }
+// Quick navigation buttons (optional)
+document.addEventListener('DOMContentLoaded', () => {
+  // Add quick links for testing
+  const quickLinks = document.createElement('div');
+  quickLinks.className = 'quick-links';
+  quickLinks.innerHTML = `
+    <button onclick="urlInput.value='https://www.google.com'; navigate()">Google</button>
+    <button onclick="urlInput.value='https://www.wikipedia.org'; navigate()">Wikipedia</button>
+    <button onclick="urlInput.value='https://www.youtube.com'; navigate()">YouTube</button>
+  `;
+  document.querySelector('.omnibox').appendChild(quickLinks);
 });
