@@ -13,8 +13,17 @@ const bareServer = createBareServer('/bare/');
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Serve UV files - THIS IS CRITICAL
-app.use('/uv', express.static(uvPath));
+// Serve UV files - IMPORTANT: Use proper MIME types
+app.use('/uv', express.static(uvPath, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.js')) {
+      res.set('Content-Type', 'application/javascript');
+    }
+    if (filePath.endsWith('.css')) {
+      res.set('Content-Type', 'text/css');
+    }
+  }
+}));
 
 // Handle bare server
 app.use((req, res, next) => {
@@ -25,100 +34,146 @@ app.use((req, res, next) => {
   }
 });
 
-// UV SERVICE ENDPOINT - Must match UV config
+// FIXED UV SERVICE ENDPOINT - No service worker registration
 app.get('/uv/service/*', (req, res) => {
-  // Get everything after /uv/service/
   const encoded = req.params[0];
   
-  console.log('UV service request for encoded:', encoded);
+  console.log('UV service for encoded:', encoded.substring(0, 50) + '...');
   
-  // Serve UV client page
+  // Direct UV client page without service worker issues
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
       <base href="/uv/service/" />
-      <script src="/uv/uv.bundle.js"></script>
-      <script src="/uv/uv.config.js"></script>
-      <link rel="stylesheet" href="/uv/uv.css">
+      <title>UV Proxy</title>
       <style>
         body {
           margin: 0;
-          padding: 0;
+          padding: 20px;
           font-family: Arial, sans-serif;
           background: #f5f5f5;
+          color: #333;
         }
-        #status {
-          padding: 20px;
+        .container {
+          max-width: 800px;
+          margin: 0 auto;
+          background: white;
+          padding: 30px;
+          border-radius: 10px;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .loading {
           text-align: center;
-          color: #666;
+          padding: 40px 20px;
         }
         .error {
-          color: #d32f2f;
           background: #ffebee;
+          color: #c62828;
           padding: 20px;
-          margin: 20px;
           border-radius: 5px;
+          margin: 20px 0;
         }
       </style>
     </head>
     <body>
-      <div id="status">
-        <h2>UV Proxy Loading...</h2>
-        <p>Please wait</p>
+      <div class="container">
+        <div id="content" class="loading">
+          <h2>🔗 UV Proxy</h2>
+          <p>Connecting through Ultraviolet...</p>
+          <div id="progress"></div>
+        </div>
       </div>
       
+      <!-- Load UV scripts FIRST -->
+      <script src="/uv/uv.bundle.js"></script>
+      <script src="/uv/uv.config.js"></script>
+      
       <script>
-        (async function() {
+        (function() {
           try {
-            // Check UV is loaded
-            if (!window.__uv$config) {
-              throw new Error('UV config not loaded. Check console.');
+            // Check if UV loaded
+            if (!window.__uv$config || !window.Ultraviolet) {
+              throw new Error('Ultraviolet libraries not loaded');
             }
             
-            // Get current path and extract encoded URL
+            // Get encoded URL from path
             const currentPath = window.location.pathname;
             const prefix = '/uv/service/';
             
             if (!currentPath.startsWith(prefix)) {
-              throw new Error('Invalid UV path');
+              throw new Error('Invalid UV service path');
             }
             
             const encodedUrl = currentPath.substring(prefix.length);
-            console.log('Encoded from path:', encodedUrl);
+            console.log('Encoded URL from path:', encodedUrl);
             
-            // Decode using UV
+            // Decode the URL
             const decodedUrl = __uv$config.decodeUrl(encodedUrl);
             console.log('Decoded URL:', decodedUrl);
             
-            // Register service worker
-            if ('serviceWorker' in navigator) {
-              try {
-                await navigator.serviceWorker.register('/uv/uv.sw.js', {
-                  scope: __uv$config.prefix
-                });
-                console.log('UV Service Worker registered');
-              } catch (swError) {
-                console.warn('Service Worker registration failed:', swError);
-              }
-            }
+            // Update status
+            document.getElementById('progress').innerHTML = 
+              '<p>Loading: <strong>' + decodedUrl + '</strong></p>';
             
-            // Load UV client
-            const clientScript = document.createElement('script');
-            clientScript.src = '/uv/uv.client.js';
-            clientScript.onload = function() {
-              // UV client should handle the rest
-              console.log('UV client loaded');
-              document.getElementById('status').innerHTML = 
-                '<h3>Connected</h3><p>Loading content...</p>';
+            // Create UV instance WITHOUT service worker
+            const uv = new Ultraviolet({
+              prefix: prefix,
+              bare: '/bare/',
+              encodeUrl: Ultraviolet.codec.xor.encode,
+              decodeUrl: Ultraviolet.codec.xor.decode,
+              handler: '/uv/uv.handler.js',
+              bundle: '/uv/uv.bundle.js',
+              config: '/uv/uv.config.js',
+              client: '/uv/uv.client.js'
+            });
+            
+            // Load UV handler
+            const handlerScript = document.createElement('script');
+            handlerScript.src = '/uv/uv.handler.js';
+            handlerScript.onload = function() {
+              // Use UV to fetch and rewrite the page
+              fetch(decodedUrl, {
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                }
+              })
+              .then(response => {
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                return response.text();
+              })
+              .then(html => {
+                // Rewrite HTML using UV
+                const rewritten = uv.rewriteHtml(html, {
+                  document: window.document,
+                  url: decodedUrl
+                });
+                
+                document.open();
+                document.write(rewritten);
+                document.close();
+              })
+              .catch(error => {
+                document.getElementById('content').innerHTML = 
+                  '<div class="error"><h3>Proxy Error</h3><p>' + error.message + 
+                  '</p><p>URL: ' + decodedUrl + '</p>' +
+                  '<p><a href="/">Return to browser</a></p></div>';
+              });
             };
-            document.head.appendChild(clientScript);
+            
+            handlerScript.onerror = function() {
+              throw new Error('Failed to load UV handler');
+            };
+            
+            document.head.appendChild(handlerScript);
             
           } catch(error) {
-            console.error('UV setup error:', error);
-            document.body.innerHTML = 
-              '<div class="error"><h3>UV Proxy Error</h3><p>' + error.message + 
-              '</p><p><a href="/">Return to browser</a></p></div>';
+            console.error('UV Error:', error);
+            document.getElementById('content').innerHTML = 
+              '<div class="error"><h3>UV Setup Error</h3><p>' + error.message + 
+              '</p><p>Check the browser console for details.</p>' +
+              '<p><a href="/" style="color: #1a73e8;">← Return to browser</a></p></div>';
           }
         })();
       </script>
@@ -127,41 +182,44 @@ app.get('/uv/service/*', (req, res) => {
   `);
 });
 
-// SIMPLE TEST - Direct UV navigation
-app.get('/uv-test', (req, res) => {
+// SIMPLE WORKING UV TEST
+app.get('/uv-go', (req, res) => {
   const url = req.query.url || 'https://www.google.com';
   
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
-      <title>UV Test</title>
+      <title>UV Go - ${url}</title>
       <script src="/uv/uv.bundle.js"></script>
-      <script src="/uv/uv.config.js"></script>
       <script>
         document.addEventListener('DOMContentLoaded', function() {
-          if (window.__uv$config && window.Ultraviolet) {
-            try {
+          try {
+            if (window.Ultraviolet && window.Ultraviolet.codec) {
               const encoded = Ultraviolet.codec.xor.encode('${url}');
-              window.location.href = __uv$config.prefix + encoded;
-            } catch(e) {
-              document.body.innerHTML = '<h1>Encoding Error</h1><p>' + e.message + '</p>';
+              // Create iframe to load UV service
+              const iframe = document.createElement('iframe');
+              iframe.style = 'width: 100%; height: 100vh; border: none; position: fixed; top: 0; left: 0;';
+              iframe.src = '/uv/service/' + encodeURIComponent(encoded);
+              document.body.appendChild(iframe);
+            } else {
+              document.body.innerHTML = '<h1>UV Not Loaded</h1><p>Try <a href="/">the main browser</a></p>';
             }
-          } else {
-            document.body.innerHTML = '<h1>UV Not Loaded</h1><p>Check console</p>';
+          } catch(e) {
+            document.body.innerHTML = '<h1>Error</h1><p>' + e.message + '</p>';
           }
         });
       </script>
     </head>
     <body>
-      Testing UV redirect to ${url}...
+      Loading ${url} via UV...
     </body>
     </html>
   `);
 });
 
-// FALLBACK PROXY - Works when UV fails
-app.get('/proxy/*', (req, res) => {
+// ALTERNATIVE: Simple proxy without UV
+app.get('/go/*', (req, res) => {
   const encoded = req.params[0];
   let url;
   
@@ -183,7 +241,7 @@ app.get('/proxy/*', (req, res) => {
     </head>
     <body>
       <iframe 
-        src="${url}" 
+        src="${url}"
         sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
         allow="fullscreen"
         referrerpolicy="no-referrer">
@@ -195,43 +253,35 @@ app.get('/proxy/*', (req, res) => {
 
 // Health check
 app.get('/health', (req, res) => {
-  res.status(200).json({ 
+  res.status(200).json({
     status: 'OK',
-    service: 'Navine Browser UV Proxy',
+    service: 'Navine Browser',
+    uv: true,
     timestamp: new Date().toISOString(),
     endpoints: {
-      uv: '/uv/service/',
-      bare: '/bare/',
-      proxy: '/proxy/',
-      test: '/uv-test?url=https://google.com'
+      main: '/',
+      uvService: '/uv/service/',
+      uvGo: '/uv-go?url=https://google.com',
+      simpleProxy: '/go/' + btoa('https://google.com')
     }
   });
 });
 
-// Check UV installation
-app.get('/check-uv', (req, res) => {
-  const requiredFiles = [
-    'uv.bundle.js',
-    'uv.config.js', 
-    'uv.client.js',
-    'uv.handler.js',
-    'uv.sw.js',
-    'uv.css'
-  ];
-  
-  const results = requiredFiles.map(file => ({
+// Debug endpoint
+app.get('/debug-uv', (req, res) => {
+  const uvFiles = ['uv.bundle.js', 'uv.config.js', 'uv.handler.js', 'uv.client.js', 'uv.sw.js'];
+  const results = uvFiles.map(file => ({
     file,
     exists: fs.existsSync(path.join(uvPath, file)),
-    path: path.join(uvPath, file).replace(process.cwd(), '')
+    size: fs.existsSync(path.join(uvPath, file)) ? 
+          fs.statSync(path.join(uvPath, file)).size + ' bytes' : 'missing'
   }));
   
-  const allExist = results.every(r => r.exists);
-  
   res.json({
-    uvPath: uvPath,
+    uvPath,
     files: results,
-    status: allExist ? 'READY' : 'MISSING_FILES',
-    message: allExist ? 'UV is properly installed' : 'Some UV files are missing'
+    nodeModules: fs.existsSync(path.join(__dirname, 'node_modules')),
+    bareExists: fs.existsSync(path.join(__dirname, 'node_modules', '@tomphttp/bare-server-node'))
   });
 });
 
@@ -249,21 +299,12 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`
 ========================================
-🚀 Navine Browser - UV Mode
+🚀 Navine Browser - UV Fixed
 📍 Port: ${PORT}
-📡 UV Path: ${uvPath}
-🔗 UV Service: http://localhost:${PORT}/uv/service/
-🧪 UV Test: http://localhost:${PORT}/uv-test
-🔍 Check UV: http://localhost:${PORT}/check-uv
+📡 UV Service: /uv/service/
+⚡ UV Test: http://localhost:${PORT}/uv-go?url=https://google.com
+🔧 Debug: http://localhost:${PORT}/debug-uv
 🏠 Browser: http://localhost:${PORT}
 ========================================
   `);
-  
-  // Verify UV files
-  const uvBundle = path.join(uvPath, 'uv.bundle.js');
-  if (fs.existsSync(uvBundle)) {
-    console.log('✅ UV bundle found');
-  } else {
-    console.log('❌ UV bundle missing at:', uvBundle);
-  }
 });
