@@ -1,4 +1,4 @@
-// public/app.js - Simple working version
+// public/app.js - Use simple proxy (most reliable)
 const urlInput = document.getElementById("urlInput");
 const goBtn = document.getElementById("goBtn");
 const iframe = document.getElementById("browser");
@@ -7,7 +7,6 @@ const newTabBtn = document.getElementById("newTab");
 
 let tabs = [];
 let currentTabId = null;
-let uvLoaded = false;
 
 // Initialize
 function init() {
@@ -23,9 +22,6 @@ function init() {
   });
   newTabBtn.addEventListener("click", () => createTab());
   
-  // Load UV in background
-  loadUV();
-  
   // Add quick navigation
   addQuickNav();
   
@@ -36,52 +32,12 @@ function init() {
   }, 200);
 }
 
-// Load UV properly
-function loadUV() {
-  // Don't load if already loaded
-  if (window.Ultraviolet) {
-    uvLoaded = true;
-    console.log('UV already loaded');
-    return;
-  }
-  
-  console.log('Loading UV...');
-  
-  // Load UV bundle first (contains Ultraviolet class)
-  const bundleScript = document.createElement('script');
-  bundleScript.src = '/uv/uv.bundle.js';
-  bundleScript.async = false;
-  bundleScript.onload = () => {
-    console.log('UV bundle loaded');
-    
-    // Now load config
-    const configScript = document.createElement('script');
-    configScript.src = '/uv/uv.config.js';
-    configScript.async = false;
-    configScript.onload = () => {
-      uvLoaded = true;
-      console.log('UV config loaded');
-    };
-    configScript.onerror = () => {
-      console.warn('UV config failed to load, will use fallback');
-    };
-    
-    document.head.appendChild(configScript);
-  };
-  
-  bundleScript.onerror = () => {
-    console.error('Failed to load UV bundle');
-  };
-  
-  document.head.appendChild(bundleScript);
-}
-
-// Format input as URL
+// Format URL
 function formatUrl(input) {
   input = input.trim();
   if (!input) return '';
   
-  // Already a valid URL?
+  // Check if already a valid URL
   try {
     new URL(input);
     return input;
@@ -95,7 +51,7 @@ function formatUrl(input) {
   }
 }
 
-// Navigate
+// Navigate - Use simple proxy (most reliable)
 function navigate() {
   const raw = urlInput.value.trim();
   if (!raw) return;
@@ -103,7 +59,7 @@ function navigate() {
   const url = formatUrl(raw);
   console.log('🌐 Navigating to:', url);
   
-  // Validate
+  // Validate URL
   try {
     new URL(url);
   } catch {
@@ -120,44 +76,19 @@ function navigate() {
     }
   }
   
-  // Use UV if loaded, otherwise use bare proxy
-  if (uvLoaded && window.Ultraviolet && window.Ultraviolet.codec) {
-    useUV(url);
-  } else {
-    useBareProxy(url);
-  }
+  // Use simple proxy (base64 encoded)
+  useSimpleProxy(url);
 }
 
-// Use Ultraviolet
-function useUV(url) {
-  console.log('Using UV proxy...');
-  
-  try {
-    // Encode with UV XOR
-    const encoded = Ultraviolet.codec.xor.encode(url);
-    console.log('XOR encoded:', encoded);
-    
-    // Build UV service URL
-    const uvUrl = `/uv/service/${encoded}`;
-    console.log('Loading UV URL:', uvUrl);
-    
-    // Load in iframe
-    iframe.src = uvUrl;
-    
-  } catch (error) {
-    console.error('UV encoding failed:', error);
-    useBareProxy(url);
-  }
-}
-
-// Use bare proxy (fallback)
-function useBareProxy(url) {
-  console.log('Using bare proxy...');
+// Simple proxy - Always works
+function useSimpleProxy(url) {
+  console.log('Using simple proxy...');
   
   // Base64 encode for URL safety
   const encoded = btoa(url);
-  const proxyUrl = `/bare-proxy/${encoded}`;
+  const proxyUrl = `/proxy/${encoded}`;
   
+  console.log('Proxy URL:', proxyUrl);
   iframe.src = proxyUrl;
 }
 
@@ -205,18 +136,8 @@ function switchTab(tabId) {
   
   // Update iframe
   if (tab.url !== 'about:blank') {
-    if (uvLoaded && window.Ultraviolet) {
-      try {
-        const encoded = Ultraviolet.codec.xor.encode(tab.url);
-        iframe.src = `/uv/service/${encoded}`;
-      } catch {
-        const encoded = btoa(tab.url);
-        iframe.src = `/bare-proxy/${encoded}`;
-      }
-    } else {
-      const encoded = btoa(tab.url);
-      iframe.src = `/bare-proxy/${encoded}`;
-    }
+    const encoded = btoa(tab.url);
+    iframe.src = `/proxy/${encoded}`;
   } else {
     iframe.src = '';
   }
@@ -284,7 +205,8 @@ function addQuickNav() {
     { name: 'Google', url: 'https://www.google.com' },
     { name: 'Wikipedia', url: 'https://www.wikipedia.org' },
     { name: 'GitHub', url: 'https://github.com' },
-    { name: 'Example', url: 'https://example.com' }
+    { name: 'Example', url: 'https://example.com' },
+    { name: 'DuckDuckGo', url: 'https://duckduckgo.com' }
   ];
   
   quickNav.innerHTML = `
@@ -306,7 +228,7 @@ function quickNav(url) {
   navigate();
 }
 
-// Initialize when page loads
+// Initialize
 document.addEventListener('DOMContentLoaded', init);
 
 // Global functions
