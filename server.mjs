@@ -1,16 +1,18 @@
 import express from "express";
-import ultraviolet from "@titaniumnetwork-dev/ultraviolet";
+import pkg from "@titaniumnetwork-dev/ultraviolet";
+
+const { createServer } = pkg;
 
 const app = express();
 
-// Ultraviolet exposes a middleware factory, NOT a class
-const uvMiddleware = ultraviolet({
+// Create Ultraviolet middleware
+const uv = createServer({
   prefix: "/uv/",
   bare: "/bare/"
 });
 
 // Mount Ultraviolet
-app.use("/uv/", uvMiddleware);
+app.use("/uv/", uv);
 
 // Serve static files
 app.use(express.static("public"));
