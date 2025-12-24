@@ -1,9 +1,11 @@
 import express from "express";
-import { Ultraviolet } from "@titaniumnetwork-dev/ultraviolet";
+import pkg from "@titaniumnetwork-dev/ultraviolet";
+
+// Destructure from CommonJS default export
+const { Ultraviolet } = pkg;
 
 const app = express();
 
-// Create Ultraviolet instance
 const uv = new Ultraviolet({
   prefix: "/uv/",
   bare: "/bare/",
@@ -14,10 +16,10 @@ const uv = new Ultraviolet({
 // Mount Ultraviolet
 app.use("/uv/", uv.middleware);
 
-// Serve frontend
+// Serve static frontend
 app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("Ultraviolet running on port " + PORT);
+  console.log(`Ultraviolet running on port ${PORT}`);
 });
