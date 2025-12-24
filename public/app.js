@@ -1,169 +1,51 @@
-// ================================
-// Ultraviolet Service Worker
-// ================================
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/uv/uv.sw.js", { scope: "/service/" })
-    .then(() => console.log("✅ UV Service Worker registered"))
-    .catch(err => console.error("❌ UV SW failed:", err));
-}
-
-// ================================
-// Elements
-// ================================
-const frame = document.getElementById("browser");
-const input = document.getElementById("urlInput");
-const tabsEl = document.getElementById("tabs");
+const urlInput = document.getElementById("urlInput");
 const goBtn = document.getElementById("goBtn");
-const newTabBtn = document.getElementById("newTab");
+const iframe = document.getElementById("browser");
 
-// ================================
-// State
-// ================================
-let tabs = [];
-let activeTabId = null;
-
-// ================================
-// Helpers
-// ================================
-function uvEncode(url) {
-  return __uv$config.prefix + __uv$config.encodeUrl(url);
+// Helper: detect if input is a URL
+function isUrl(val) {
+  try {
+    new URL(val);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-function isLikelyUrl(value) {
-  return /^https?:\/\//i.test(value) || /\./.test(value);
-}
+// Convert input into a valid URL or search query
+function formatInput(input) {
+  input = input.trim();
 
-function normalizeInput(value) {
-  value = value.trim();
-  if (!value) return "";
+  if (isUrl(input)) return input;
 
-  if (isLikelyUrl(value)) {
-    if (!/^https?:\/\//i.test(value)) {
-      return "https://" + value;
-    }
-    return value;
+  // If it looks like a domain, add https
+  if (input.includes(".") && !input.includes(" ")) {
+    return "https://" + input;
   }
 
-  return "https://www.google.com/search?q=" + encodeURIComponent(value);
+  // Otherwise, treat as search
+  return "https://www.google.com/search?q=" + encodeURIComponent(input);
 }
 
-function getActiveTab() {
-  return tabs.find(t => t.id === activeTabId);
-}
-
-// ================================
-// Tabs
-// ================================
-function createTab() {
-  const tab = {
-    id: crypto.randomUUID(),
-    title: "New Tab",
-    input: "",
-    proxied: ""
-  };
-  tabs.push(tab);
-  setActiveTab(tab.id);
-}
-
-function closeTab(id) {
-  const index = tabs.findIndex(t => t.id === id);
-  if (index === -1) return;
-
-  tabs.splice(index, 1);
-
-  if (!tabs.length) {
-    createTab();
+// Navigate using Ultraviolet
+function navigate() {
+  if (!window.__uv$config) {
+    alert("Ultraviolet not loaded");
     return;
   }
 
-  if (id === activeTabId) {
-    const next = tabs[Math.max(0, index - 1)];
-    setActiveTab(next.id);
-  } else {
-    renderTabs();
-  }
-}
-
-function setActiveTab(id) {
-  activeTabId = id;
-  const tab = getActiveTab();
-  renderTabs();
-
-  input.value = tab.input;
-  frame.src = tab.proxied || "";
-}
-
-function renderTabs() {
-  tabsEl.innerHTML = "";
-
-  for (const tab of tabs) {
-    const el = document.createElement("div");
-    el.className = "tab" + (tab.id === activeTabId ? " active" : "");
-
-    const title = document.createElement("span");
-    title.textContent = tab.title;
-
-    const close = document.createElement("button");
-    close.textContent = "×";
-    close.onclick = e => {
-      e.stopPropagation();
-      closeTab(tab.id);
-    };
-
-    el.onclick = () => setActiveTab(tab.id);
-
-    el.append(title, close);
-    tabsEl.appendChild(el);
-  }
-}
-
-// ================================
-// Navigation
-// ================================
-function navigate() {
-  const tab = getActiveTab();
-  if (!tab) return;
-
-  const raw = input.value.trim();
+  const raw = urlInput.value;
   if (!raw) return;
 
-  const url = normalizeInput(raw);
-  const proxied = uvEncode(url);
+  const target = formatInput(raw);
+  const encoded = __uv$config.encodeUrl(target);
 
-  tab.input = raw;
-  tab.proxied = proxied;
-  tab.title = url;
-
-  frame.src = proxied;
-  renderTabs();
+  iframe.src = __uv$config.prefix + encoded;
 }
 
-goBtn.onclick = navigate;
-input.addEventListener("keydown", e => {
+// Events
+goBtn.addEventListener("click", navigate);
+
+urlInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") navigate();
 });
-
-newTabBtn.onclick = () => createTab();
-
-// ================================
-// Update tab title on load
-// ================================
-frame.addEventListener("load", () => {
-  try {
-    const title = frame.contentDocument?.title;
-    if (title) {
-      const tab = getActiveTab();
-      if (tab) {
-        tab.title = title;
-        renderTabs();
-      }
-    }
-  } catch {
-    // Cross-origin blocked — ignore
-  }
-});
-
-// ================================
-// Init
-// ================================
-createTab();
