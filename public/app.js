@@ -1,4 +1,4 @@
-// public/app.js - Using /uv/service/
+// public/app.js - Simple working browser with UV
 const urlInput = document.getElementById("urlInput");
 const goBtn = document.getElementById("goBtn");
 const iframe = document.getElementById("browser");
@@ -10,10 +10,10 @@ let currentTabId = null;
 
 // Initialize
 function init() {
-  console.log('🚀 Initializing UV Browser...');
+  console.log('🚀 Browser starting...');
   
-  // Load UV configuration first
-  loadUV();
+  // Load UV
+  loadUVScripts();
   
   // Create first tab
   createTab();
@@ -25,69 +25,46 @@ function init() {
   });
   newTabBtn.addEventListener("click", () => createTab());
   
-  // Add status indicator
-  addStatusBar();
+  // Add quick nav
+  setTimeout(addQuickNav, 100);
   
-  // Focus URL input
+  // Focus URL
   setTimeout(() => {
     urlInput.focus();
     urlInput.select();
-  }, 500);
+  }, 200);
 }
 
 // Load UV scripts
-function loadUV() {
-  // Check if already loaded
+function loadUVScripts() {
+  // Don't reload if already loaded
   if (window.__uv$config) {
-    console.log('UV config already loaded');
-    updateStatus('UV: Ready');
+    console.log('UV already loaded');
     return;
   }
   
-  updateStatus('UV: Loading...');
+  console.log('Loading UV scripts...');
   
-  // Load UV bundle and config
   const scripts = [
-    '/uv/uv.bundle.js',
-    '/uv/uv.config.js'
+    { src: '/uv/uv.bundle.js', id: 'uv-bundle' },
+    { src: '/uv/uv.config.js', id: 'uv-config' }
   ];
   
-  let loaded = 0;
-  
-  scripts.forEach(src => {
+  scripts.forEach(scriptInfo => {
+    // Remove existing if any
+    const existing = document.getElementById(scriptInfo.id);
+    if (existing) existing.remove();
+    
+    // Create new script
     const script = document.createElement('script');
-    script.src = src;
-    script.onload = () => {
-      loaded++;
-      console.log(`Loaded: ${src}`);
-      
-      if (loaded === scripts.length) {
-        if (window.__uv$config) {
-          console.log('UV config loaded:', window.__uv$config);
-          updateStatus('UV: Ready');
-        } else {
-          console.error('UV config not found after loading scripts');
-          updateStatus('UV: Config missing');
-        }
-      }
-    };
-    script.onerror = () => {
-      console.error(`Failed to load: ${src}`);
-      updateStatus(`UV: Failed to load ${src.split('/').pop()}`);
-    };
+    script.id = scriptInfo.id;
+    script.src = scriptInfo.src;
+    script.async = false;
     document.head.appendChild(script);
   });
-  
-  // Check after timeout
-  setTimeout(() => {
-    if (!window.__uv$config) {
-      console.warn('UV not loaded after timeout, using fallback');
-      updateStatus('UV: Using fallback mode');
-    }
-  }, 3000);
 }
 
-// Navigate using UV
+// Navigate
 function navigate() {
   const raw = urlInput.value.trim();
   if (!raw) return;
@@ -107,7 +84,7 @@ function navigate() {
   
   console.log('🌐 Target:', url);
   
-  // Validate URL
+  // Validate
   try {
     new URL(url);
   } catch {
@@ -115,12 +92,11 @@ function navigate() {
     return;
   }
   
-  // Try UV first
+  // Use UV if available, otherwise fallback
   if (window.Ultraviolet && window.Ultraviolet.codec) {
-    navigateUV(url);
+    useUV(url);
   } else {
-    // Fallback
-    navigateFallback(url);
+    useSimpleProxy(url);
   }
   
   // Update current tab
@@ -133,41 +109,37 @@ function navigate() {
   }
 }
 
-// Navigate using Ultraviolet
-function navigateUV(url) {
-  console.log('Using UV proxy...');
-  updateStatus('UV: Encoding...');
+// Use Ultraviolet
+function useUV(url) {
+  console.log('Using UV...');
   
   try {
-    // Encode URL with UV XOR
+    // Encode with UV XOR
     const encoded = Ultraviolet.codec.xor.encode(url);
-    console.log('Encoded:', encoded.substring(0, 50) + '...');
     
     // URL encode for safety
-    const urlSafeEncoded = encodeURIComponent(encoded);
+    const safeEncoded = encodeURIComponent(encoded);
     
     // Build UV service URL
-    const uvUrl = `/uv/service/${urlSafeEncoded}`;
-    console.log('UV URL:', uvUrl);
+    const uvUrl = `/uv/service/${safeEncoded}`;
+    console.log('UV URL ready');
     
-    updateStatus('UV: Loading...');
+    // Load in iframe
     iframe.src = uvUrl;
     
   } catch (error) {
-    console.error('UV encoding failed:', error);
-    updateStatus('UV: Failed, using fallback');
-    navigateFallback(url);
+    console.error('UV failed:', error);
+    useSimpleProxy(url);
   }
 }
 
-// Fallback navigation
-function navigateFallback(url) {
-  console.log('Using fallback proxy...');
-  updateStatus('Proxy: Loading...');
+// Simple proxy fallback
+function useSimpleProxy(url) {
+  console.log('Using simple proxy...');
   
-  // Simple base64 proxy
+  // Base64 encode
   const encoded = btoa(url);
-  iframe.src = `/proxy/${encoded}`;
+  iframe.src = `/go/${encoded}`;
 }
 
 // Tab management
@@ -217,15 +189,15 @@ function switchTab(tabId) {
     if (window.Ultraviolet && window.Ultraviolet.codec) {
       try {
         const encoded = Ultraviolet.codec.xor.encode(tab.url);
-        const urlSafe = encodeURIComponent(encoded);
-        iframe.src = `/uv/service/${urlSafe}`;
+        const safeEncoded = encodeURIComponent(encoded);
+        iframe.src = `/uv/service/${safeEncoded}`;
       } catch {
         const encoded = btoa(tab.url);
-        iframe.src = `/proxy/${encoded}`;
+        iframe.src = `/go/${encoded}`;
       }
     } else {
       const encoded = btoa(tab.url);
-      iframe.src = `/proxy/${encoded}`;
+      iframe.src = `/go/${encoded}`;
     }
   } else {
     iframe.src = '';
@@ -248,13 +220,11 @@ function updateTabDisplay(tab) {
     try {
       const urlObj = new URL(tab.url);
       displayText = urlObj.hostname.replace('www.', '');
-      
-      // Shorten
-      if (displayText.length > 18) {
-        displayText = displayText.substring(0, 15) + '...';
+      if (displayText.length > 15) {
+        displayText = displayText.substring(0, 12) + '...';
       }
     } catch {
-      displayText = 'Page';
+      displayText = 'Web Page';
     }
   }
   
@@ -281,36 +251,6 @@ function closeTab(tabId) {
   }
 }
 
-// Status bar
-function addStatusBar() {
-  const statusBar = document.createElement('div');
-  statusBar.id = 'statusBar';
-  statusBar.style.cssText = `
-    padding: 4px 12px;
-    background: #f5f5f5;
-    border-top: 1px solid #ddd;
-    font-size: 12px;
-    color: #666;
-    font-family: monospace;
-  `;
-  statusBar.textContent = 'Initializing...';
-  
-  // Insert after iframe
-  const body = document.querySelector('body');
-  if (body) {
-    body.appendChild(statusBar);
-  }
-}
-
-function updateStatus(message) {
-  const statusBar = document.getElementById('statusBar');
-  if (statusBar) {
-    statusBar.textContent = message;
-    console.log('Status:', message);
-  }
-}
-
-// Add quick navigation
 function addQuickNav() {
   const quickNav = document.createElement('div');
   quickNav.style.cssText = `
@@ -319,34 +259,23 @@ function addQuickNav() {
     padding: 8px 12px;
     background: #f8f9fa;
     border-bottom: 1px solid #e0e0e0;
+    flex-wrap: wrap;
   `;
+  
+  const sites = [
+    { name: 'Google', url: 'https://www.google.com' },
+    { name: 'Wikipedia', url: 'https://www.wikipedia.org' },
+    { name: 'YouTube', url: 'https://www.youtube.com' },
+    { name: 'GitHub', url: 'https://github.com' },
+    { name: 'DuckDuckGo', url: 'https://duckduckgo.com' }
+  ];
   
   quickNav.innerHTML = `
-    <span style="color: #666; font-size: 12px; padding: 6px 0;">Quick:</span>
-    <button onclick="quickGo('https://www.google.com')" class="quick-btn">Google</button>
-    <button onclick="quickGo('https://www.wikipedia.org')" class="quick-btn">Wikipedia</button>
-    <button onclick="quickGo('https://www.youtube.com')" class="quick-btn">YouTube</button>
-    <button onclick="quickGo('https://example.com')" class="quick-btn">Example</button>
+    <span style="color: #666; font-size: 12px; padding: 6px 0; margin-right: 8px;">Quick:</span>
+    ${sites.map(site => 
+      `<button onclick="quickNav('${site.url}')" style="padding: 6px 12px; background: white; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 13px;">${site.name}</button>`
+    ).join('')}
   `;
-  
-  // Add CSS for quick buttons
-  const style = document.createElement('style');
-  style.textContent = `
-    .quick-btn {
-      padding: 6px 12px;
-      background: white;
-      border: 1px solid #dadce0;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 13px;
-      color: #3c4043;
-    }
-    .quick-btn:hover {
-      background: #f8f9fa;
-      border-color: #d2e3fc;
-    }
-  `;
-  document.head.appendChild(style);
   
   // Insert after omnibox
   const omnibox = document.querySelector('.omnibox');
@@ -355,7 +284,7 @@ function addQuickNav() {
   }
 }
 
-function quickGo(url) {
+function quickNav(url) {
   urlInput.value = url;
   navigate();
 }
@@ -363,6 +292,6 @@ function quickGo(url) {
 // Initialize
 document.addEventListener('DOMContentLoaded', init);
 
-// Global functions
-window.quickGo = quickGo;
+// Global
+window.quickNav = quickNav;
 window.navigate = navigate;
