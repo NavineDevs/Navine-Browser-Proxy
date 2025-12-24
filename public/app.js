@@ -1,4 +1,4 @@
-// public/app.js - Simple working browser with UV
+// public/app.js - Fixed encoding
 const urlInput = document.getElementById("urlInput");
 const goBtn = document.getElementById("goBtn");
 const iframe = document.getElementById("browser");
@@ -7,13 +7,11 @@ const newTabBtn = document.getElementById("newTab");
 
 let tabs = [];
 let currentTabId = null;
+let uvReady = false;
 
 // Initialize
 function init() {
-  console.log('🚀 Browser starting...');
-  
-  // Load UV
-  loadUVScripts();
+  console.log('Initializing browser...');
   
   // Create first tab
   createTab();
@@ -25,64 +23,77 @@ function init() {
   });
   newTabBtn.addEventListener("click", () => createTab());
   
-  // Add quick nav
-  setTimeout(addQuickNav, 100);
+  // Load UV
+  loadUV();
   
-  // Focus URL
-  setTimeout(() => {
-    urlInput.focus();
-    urlInput.select();
-  }, 200);
+  // Add quick nav
+  setTimeout(addQuickNav, 500);
 }
 
-// Load UV scripts
-function loadUVScripts() {
-  // Don't reload if already loaded
+// Load UV scripts ONCE
+function loadUV() {
   if (window.__uv$config) {
+    uvReady = true;
     console.log('UV already loaded');
     return;
   }
   
-  console.log('Loading UV scripts...');
+  console.log('Loading UV...');
   
-  const scripts = [
-    { src: '/uv/uv.bundle.js', id: 'uv-bundle' },
-    { src: '/uv/uv.config.js', id: 'uv-config' }
-  ];
-  
-  scripts.forEach(scriptInfo => {
-    // Remove existing if any
-    const existing = document.getElementById(scriptInfo.id);
-    if (existing) existing.remove();
+  // Load bundle first
+  const bundleScript = document.createElement('script');
+  bundleScript.src = '/uv/uv.bundle.js';
+  bundleScript.async = false;
+  bundleScript.onload = () => {
+    console.log('UV bundle loaded');
     
-    // Create new script
-    const script = document.createElement('script');
-    script.id = scriptInfo.id;
-    script.src = scriptInfo.src;
-    script.async = false;
-    document.head.appendChild(script);
-  });
+    // Load config
+    const configScript = document.createElement('script');
+    configScript.src = '/uv/uv.config.js';
+    configScript.async = false;
+    configScript.onload = () => {
+      uvReady = true;
+      console.log('UV config loaded');
+      
+      // Update UV config if needed
+      if (window.__uv$config) {
+        window.__uv$config.prefix = '/uv/service/';
+        window.__uv$config.bare = '/bare/';
+        console.log('UV config updated');
+      }
+    };
+    document.head.appendChild(configScript);
+  };
+  
+  document.head.appendChild(bundleScript);
 }
 
-// Navigate
+// Format URL
+function formatUrl(input) {
+  input = input.trim();
+  if (!input) return '';
+  
+  // Already a URL?
+  try {
+    const url = new URL(input);
+    return url.href;
+  } catch {
+    // Has dots but no spaces? Assume domain
+    if (input.includes('.') && !input.includes(' ')) {
+      return 'https://' + input;
+    }
+    // Otherwise search
+    return 'https://www.google.com/search?q=' + encodeURIComponent(input);
+  }
+}
+
+// Navigate - FIXED encoding
 function navigate() {
   const raw = urlInput.value.trim();
   if (!raw) return;
   
-  let url;
-  
-  // Format URL
-  if (!raw.startsWith('http://') && !raw.startsWith('https://')) {
-    if (raw.includes('.') && !raw.includes(' ')) {
-      url = 'https://' + raw;
-    } else {
-      url = 'https://www.google.com/search?q=' + encodeURIComponent(raw);
-    }
-  } else {
-    url = raw;
-  }
-  
-  console.log('🌐 Target:', url);
+  const url = formatUrl(raw);
+  console.log('Navigating to:', url);
   
   // Validate
   try {
@@ -92,14 +103,14 @@ function navigate() {
     return;
   }
   
-  // Use UV if available, otherwise fallback
-  if (window.Ultraviolet && window.Ultraviolet.codec) {
-    useUV(url);
+  // Use UV if ready
+  if (uvReady && window.Ultraviolet && window.Ultraviolet.codec) {
+    navigateUV(url);
   } else {
-    useSimpleProxy(url);
+    navigateSimple(url);
   }
   
-  // Update current tab
+  // Update tab
   if (currentTabId) {
     const tab = tabs.find(t => t.id === currentTabId);
     if (tab) {
@@ -109,37 +120,35 @@ function navigate() {
   }
 }
 
-// Use Ultraviolet
-function useUV(url) {
+// Navigate with UV - FIXED: No double encoding
+function navigateUV(url) {
   console.log('Using UV...');
   
   try {
-    // Encode with UV XOR
+    // Encode ONCE with UV XOR
     const encoded = Ultraviolet.codec.xor.encode(url);
+    console.log('XOR encoded:', encoded);
     
-    // URL encode for safety
-    const safeEncoded = encodeURIComponent(encoded);
-    
-    // Build UV service URL
-    const uvUrl = `/uv/service/${safeEncoded}`;
-    console.log('UV URL ready');
+    // DO NOT encodeURIComponent here - let the server handle it
+    // The server will decode it properly
+    const uvUrl = `/uv/service/${encoded}`;
+    console.log('Final UV URL:', uvUrl);
     
     // Load in iframe
     iframe.src = uvUrl;
     
   } catch (error) {
-    console.error('UV failed:', error);
-    useSimpleProxy(url);
+    console.error('UV encoding failed:', error);
+    navigateSimple(url);
   }
 }
 
-// Simple proxy fallback
-function useSimpleProxy(url) {
-  console.log('Using simple proxy...');
+// Simple navigation (fallback)
+function navigateSimple(url) {
+  console.log('Using simple navigation...');
   
-  // Base64 encode
-  const encoded = btoa(url);
-  iframe.src = `/go/${encoded}`;
+  // Use a query parameter instead
+  iframe.src = `/uv-redirect?url=${encodeURIComponent(url)}`;
 }
 
 // Tab management
@@ -186,18 +195,15 @@ function switchTab(tabId) {
   
   // Update iframe
   if (tab.url !== 'about:blank') {
-    if (window.Ultraviolet && window.Ultraviolet.codec) {
+    if (uvReady && window.Ultraviolet) {
       try {
         const encoded = Ultraviolet.codec.xor.encode(tab.url);
-        const safeEncoded = encodeURIComponent(encoded);
-        iframe.src = `/uv/service/${safeEncoded}`;
+        iframe.src = `/uv/service/${encoded}`;
       } catch {
-        const encoded = btoa(tab.url);
-        iframe.src = `/go/${encoded}`;
+        iframe.src = `/uv-redirect?url=${encodeURIComponent(tab.url)}`;
       }
     } else {
-      const encoded = btoa(tab.url);
-      iframe.src = `/go/${encoded}`;
+      iframe.src = `/uv-redirect?url=${encodeURIComponent(tab.url)}`;
     }
   } else {
     iframe.src = '';
@@ -224,7 +230,7 @@ function updateTabDisplay(tab) {
         displayText = displayText.substring(0, 12) + '...';
       }
     } catch {
-      displayText = 'Web Page';
+      displayText = 'Page';
     }
   }
   
@@ -258,20 +264,19 @@ function addQuickNav() {
     gap: 8px;
     padding: 8px 12px;
     background: #f8f9fa;
-    border-bottom: 1px solid #e0e0e0;
+    border-bottom: 1px solid #ddd;
     flex-wrap: wrap;
   `;
   
   const sites = [
     { name: 'Google', url: 'https://www.google.com' },
     { name: 'Wikipedia', url: 'https://www.wikipedia.org' },
-    { name: 'YouTube', url: 'https://www.youtube.com' },
     { name: 'GitHub', url: 'https://github.com' },
-    { name: 'DuckDuckGo', url: 'https://duckduckgo.com' }
+    { name: 'Example', url: 'https://example.com' }
   ];
   
   quickNav.innerHTML = `
-    <span style="color: #666; font-size: 12px; padding: 6px 0; margin-right: 8px;">Quick:</span>
+    <span style="color: #666; font-size: 12px; padding: 6px 0;">Quick:</span>
     ${sites.map(site => 
       `<button onclick="quickNav('${site.url}')" style="padding: 6px 12px; background: white; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 13px;">${site.name}</button>`
     ).join('')}
@@ -292,6 +297,6 @@ function quickNav(url) {
 // Initialize
 document.addEventListener('DOMContentLoaded', init);
 
-// Global
+// Global functions
 window.quickNav = quickNav;
 window.navigate = navigate;
