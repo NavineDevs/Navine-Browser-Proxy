@@ -1,4 +1,4 @@
-// public/app.js - Simple working version
+// public/app.js - Fixed to use /uv/service/
 const urlInput = document.getElementById("urlInput");
 const goBtn = document.getElementById("goBtn");
 const iframe = document.getElementById("browser");
@@ -8,16 +8,35 @@ const newTabBtn = document.getElementById("newTab");
 let tabs = [];
 let currentTabId = null;
 
-// Initialize
-function init() {
-  // Check if UV is loaded
+// Initialize UV
+function initUV() {
   if (!window.Ultraviolet) {
-    console.error('Ultraviolet not found');
-    setTimeout(() => {
-      if (!window.Ultraviolet) {
-        alert('Ultraviolet proxy not loaded. Please check console.');
-      }
-    }, 1000);
+    console.error('Ultraviolet not loaded');
+    return false;
+  }
+  
+  // Create custom UV config
+  window.__uv$config = {
+    prefix: '/uv/service/',
+    bare: '/bare/',
+    encodeUrl: Ultraviolet.codec.xor.encode,
+    decodeUrl: Ultraviolet.codec.xor.decode,
+    handler: '/uv/uv.handler.js',
+    bundle: '/uv/uv.bundle.js',
+    config: '/uv/uv.config.js',
+    client: '/uv/uv.client.js',
+    sw: '/uv/uv.sw.js'
+  };
+  
+  return true;
+}
+
+// Initialize app
+function init() {
+  // Initialize UV config
+  if (!initUV()) {
+    alert('Ultraviolet proxy not loaded. Please refresh the page.');
+    return;
   }
   
   // Create first tab
@@ -30,8 +49,8 @@ function init() {
   });
   newTabBtn.addEventListener("click", () => createTab());
   
-  // Quick navigation buttons
-  setupQuickNav();
+  // Add quick nav
+  addQuickNav();
 }
 
 function navigate() {
@@ -41,29 +60,50 @@ function navigate() {
   let url;
   try {
     // Try to parse as URL
-    new URL(raw);
-    url = raw;
-  } catch {
-    // If not a valid URL, treat as search
-    if (raw.includes('.') && !raw.includes(' ')) {
-      url = 'https://' + raw;
+    if (!raw.startsWith('http://') && !raw.startsWith('https://')) {
+      if (raw.includes('.') && !raw.includes(' ')) {
+        url = 'https://' + raw;
+      } else {
+        url = 'https://www.google.com/search?q=' + encodeURIComponent(raw);
+      }
     } else {
-      url = 'https://www.google.com/search?q=' + encodeURIComponent(raw);
+      url = raw;
     }
+    
+    // Validate URL
+    new URL(url);
+  } catch (error) {
+    alert('Invalid URL: ' + error.message);
+    return;
   }
   
   console.log('Navigating to:', url);
   
-  // Update iframe using direct /go route
-  iframe.src = `/go?url=${encodeURIComponent(url)}`;
-  
-  // Update current tab
-  if (currentTabId) {
-    const tab = tabs.find(t => t.id === currentTabId);
-    if (tab) {
-      tab.url = url;
-      updateTabDisplay(tab);
+  try {
+    // Encode URL using UV
+    const encoded = Ultraviolet.codec.xor.encode(url);
+    const proxiedUrl = '/uv/service/' + encoded;
+    
+    console.log('Proxied URL:', proxiedUrl);
+    
+    // Load in iframe
+    iframe.src = proxiedUrl;
+    
+    // Update current tab
+    if (currentTabId) {
+      const tab = tabs.find(t => t.id === currentTabId);
+      if (tab) {
+        tab.url = url;
+        tab.proxiedUrl = proxiedUrl;
+        updateTabDisplay(tab);
+      }
     }
+  } catch (error) {
+    console.error('Navigation error:', error);
+    alert('Error: ' + error.message);
+    
+    // Fallback to /go route
+    iframe.src = '/go?url=' + encodeURIComponent(url);
   }
 }
 
@@ -110,7 +150,12 @@ function switchTab(tabId) {
   
   // Update iframe
   if (tab.url !== 'about:blank') {
-    iframe.src = `/go?url=${encodeURIComponent(tab.url)}`;
+    try {
+      const encoded = Ultraviolet.codec.xor.encode(tab.url);
+      iframe.src = '/uv/service/' + encoded;
+    } catch (error) {
+      iframe.src = '/go?url=' + encodeURIComponent(tab.url);
+    }
   } else {
     iframe.src = '';
   }
@@ -132,12 +177,11 @@ function updateTabDisplay(tab) {
     try {
       const urlObj = new URL(tab.url);
       displayText = urlObj.hostname.replace('www.', '');
-      // Limit length
-      if (displayText.length > 20) {
-        displayText = displayText.substring(0, 17) + '...';
+      if (displayText.length > 15) {
+        displayText = displayText.substring(0, 12) + '...';
       }
     } catch {
-      displayText = 'Page';
+      displayText = tab.url.length > 15 ? tab.url.substring(0, 12) + '...' : tab.url;
     }
   }
   
@@ -164,28 +208,33 @@ function closeTab(tabId) {
   }
 }
 
-function setupQuickNav() {
+function addQuickNav() {
   const quickNav = document.createElement('div');
   quickNav.className = 'quick-nav';
   quickNav.innerHTML = `
-    <button onclick="urlInput.value='https://www.google.com'; navigate()">Google</button>
-    <button onclick="urlInput.value='https://www.wikipedia.org'; navigate()">Wikipedia</button>
-    <button onclick="urlInput.value='https://www.youtube.com'; navigate()">YouTube</button>
-    <button onclick="urlInput.value='https://example.com'; navigate()">Example</button>
+    <button onclick="quickNavigate('https://www.google.com')">Google</button>
+    <button onclick="quickNavigate('https://www.wikipedia.org')">Wikipedia</button>
+    <button onclick="quickNavigate('https://www.youtube.com')">YouTube</button>
+    <button onclick="quickNavigate('https://example.com')">Example</button>
   `;
   
-  // Insert after omnibox
   const omnibox = document.querySelector('.omnibox');
   if (omnibox) {
     omnibox.parentNode.insertBefore(quickNav, omnibox.nextSibling);
   }
 }
 
+function quickNavigate(url) {
+  urlInput.value = url;
+  navigate();
+}
+
 // Start when page loads
 document.addEventListener('DOMContentLoaded', init);
 
-// Make functions available globally for buttons
+// Make functions available globally
 window.navigate = navigate;
+window.quickNavigate = quickNavigate;
 window.createTab = createTab;
 window.switchTab = switchTab;
 window.closeTab = closeTab;
