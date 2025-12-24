@@ -1,4 +1,4 @@
-// public/app.js - Use simple proxy (most reliable)
+// public/app.js - UV Browser
 const urlInput = document.getElementById("urlInput");
 const goBtn = document.getElementById("goBtn");
 const iframe = document.getElementById("browser");
@@ -7,10 +7,14 @@ const newTabBtn = document.getElementById("newTab");
 
 let tabs = [];
 let currentTabId = null;
+let uvInitialized = false;
 
 // Initialize
 function init() {
-  console.log('🚀 Browser starting...');
+  console.log('🚀 UV Browser starting...');
+  
+  // Preload UV
+  preloadUV();
   
   // Create first tab
   createTab();
@@ -22,14 +26,69 @@ function init() {
   });
   newTabBtn.addEventListener("click", () => createTab());
   
-  // Add quick navigation
+  // Add quick nav
   addQuickNav();
   
-  // Focus URL input
+  // Focus
   setTimeout(() => {
     urlInput.focus();
     urlInput.select();
   }, 200);
+}
+
+// Preload UV scripts
+function preloadUV() {
+  if (window.Ultraviolet) {
+    uvInitialized = true;
+    console.log('UV already loaded');
+    return;
+  }
+  
+  console.log('Loading UV scripts...');
+  
+  // Load UV bundle first
+  const bundleScript = document.createElement('script');
+  bundleScript.src = '/uv/uv.bundle.js';
+  bundleScript.async = false;
+  
+  bundleScript.onload = () => {
+    console.log('UV bundle loaded');
+    
+    // Set config before loading config script
+    window.__uv$config = {
+      prefix: '/uv/service/',
+      bare: '/bare/',
+      encodeUrl: Ultraviolet.codec.xor.encode,
+      decodeUrl: Ultraviolet.codec.xor.decode,
+      handler: '/uv/uv.handler.js',
+      bundle: '/uv/uv.bundle.js',
+      config: '/uv/uv.config.js',
+      client: '/uv/uv.client.js',
+      sw: '/uv/uv.sw.js'
+    };
+    
+    // Load config
+    const configScript = document.createElement('script');
+    configScript.src = '/uv/uv.config.js';
+    configScript.async = false;
+    
+    configScript.onload = () => {
+      uvInitialized = true;
+      console.log('UV initialized');
+    };
+    
+    configScript.onerror = (e) => {
+      console.error('Failed to load UV config:', e);
+    };
+    
+    document.head.appendChild(configScript);
+  };
+  
+  bundleScript.onerror = (e) => {
+    console.error('Failed to load UV bundle:', e);
+  };
+  
+  document.head.appendChild(bundleScript);
 }
 
 // Format URL
@@ -51,7 +110,7 @@ function formatUrl(input) {
   }
 }
 
-// Navigate - Use simple proxy (most reliable)
+// Navigate using UV
 function navigate() {
   const raw = urlInput.value.trim();
   if (!raw) return;
@@ -59,11 +118,11 @@ function navigate() {
   const url = formatUrl(raw);
   console.log('🌐 Navigating to:', url);
   
-  // Validate URL
+  // Validate
   try {
     new URL(url);
   } catch {
-    alert('Please enter a valid URL');
+    alert('Invalid URL');
     return;
   }
   
@@ -76,20 +135,40 @@ function navigate() {
     }
   }
   
-  // Use simple proxy (base64 encoded)
-  useSimpleProxy(url);
+  // Navigate with UV
+  navigateWithUV(url);
 }
 
-// Simple proxy - Always works
-function useSimpleProxy(url) {
-  console.log('Using simple proxy...');
+// Navigate using UV XOR encoding
+function navigateWithUV(url) {
+  console.log('Using UV proxy...');
   
-  // Base64 encode for URL safety
-  const encoded = btoa(url);
-  const proxyUrl = `/proxy/${encoded}`;
+  // Check if UV is ready
+  if (!uvInitialized || !window.Ultraviolet || !window.Ultraviolet.codec) {
+    console.warn('UV not ready, loading...');
+    
+    // Load UV and retry
+    preloadUV();
+    setTimeout(() => navigateWithUV(url), 500);
+    return;
+  }
   
-  console.log('Proxy URL:', proxyUrl);
-  iframe.src = proxyUrl;
+  try {
+    // Encode with UV XOR
+    const encoded = Ultraviolet.codec.xor.encode(url);
+    console.log('Encoded:', encoded.substring(0, 50) + '...');
+    
+    // Build UV service URL (NO extra encoding!)
+    const uvUrl = `/uv/service/${encoded}`;
+    console.log('UV URL:', uvUrl);
+    
+    // Load in iframe
+    iframe.src = uvUrl;
+    
+  } catch (error) {
+    console.error('UV encoding error:', error);
+    alert('UV Error: ' + error.message);
+  }
 }
 
 // Tab management
@@ -136,8 +215,17 @@ function switchTab(tabId) {
   
   // Update iframe
   if (tab.url !== 'about:blank') {
-    const encoded = btoa(tab.url);
-    iframe.src = `/proxy/${encoded}`;
+    if (uvInitialized && window.Ultraviolet && window.Ultraviolet.codec) {
+      try {
+        const encoded = Ultraviolet.codec.xor.encode(tab.url);
+        iframe.src = `/uv/service/${encoded}`;
+      } catch (error) {
+        console.error('Failed to switch tab:', error);
+        iframe.src = '';
+      }
+    } else {
+      iframe.src = '';
+    }
   } else {
     iframe.src = '';
   }
@@ -163,7 +251,7 @@ function updateTabDisplay(tab) {
         displayText = displayText.substring(0, 17) + '...';
       }
     } catch {
-      displayText = 'Web Page';
+      displayText = 'Page';
     }
   }
   
@@ -204,8 +292,8 @@ function addQuickNav() {
   const sites = [
     { name: 'Google', url: 'https://www.google.com' },
     { name: 'Wikipedia', url: 'https://www.wikipedia.org' },
+    { name: 'YouTube', url: 'https://www.youtube.com' },
     { name: 'GitHub', url: 'https://github.com' },
-    { name: 'Example', url: 'https://example.com' },
     { name: 'DuckDuckGo', url: 'https://duckduckgo.com' }
   ];
   
