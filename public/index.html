@@ -27,16 +27,14 @@
   <script src="/uv/uv.config.js"></script>
   <script src="/app.js"></script>
   <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/uv/uv.sw.js', {
-        scope: '/uv/service/',
-      }).then(() => {
-        console.log('✅ UV Service Worker registered');
-      }).catch(err => {
-        console.error('❌ UV Service Worker registration failed:', err);
-      });
-    }
-  </script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/uv/uv.sw.js', {
+    scope: '/uv/service/'
+  }).then(() => {
+    console.log('✅ UV Service Worker registered');
+  }).catch(console.error);
+}
+</script>
 
 </body>
 </html>
