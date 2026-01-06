@@ -1,4 +1,3 @@
-// public/app.js - UV Browser
 const urlInput = document.getElementById("urlInput");
 const goBtn = document.getElementById("goBtn");
 const iframe = document.getElementById("browser");
@@ -8,146 +7,120 @@ const newTabBtn = document.getElementById("newTab");
 let tabs = [];
 let currentTabId = null;
 
-// UV configuration
 let uvConfig = {
-  prefix: '/uv/service/',
-  bare: '/bare/',
+  prefix: "/uv/service/",
+  bare: "https://uv.holyubofficial.net/bare/",
   encodeUrl: null,
   decodeUrl: null
 };
 
-// Initialize
 function init() {
   console.log('🚀 UV Browser starting...');
-  
-  // Preload UV in background
   loadUV();
-  
-  // Create first tab
   createTab();
-  
-  // Event listeners
+
   goBtn.addEventListener("click", navigate);
   urlInput.addEventListener("keydown", e => {
     if (e.key === "Enter") navigate();
   });
   newTabBtn.addEventListener("click", () => createTab());
-  
-  // Add quick navigation
+
   addQuickNav();
-  
-  // Focus URL input
+
   setTimeout(() => {
     urlInput.focus();
     urlInput.select();
   }, 300);
 }
 
-// Load UV scripts
 function loadUV() {
-  // Don't reload if already loaded
   if (window.__uv$loading || window.Ultraviolet) return;
   window.__uv$loading = true;
-  
-  console.log('📦 Loading UV...');
-  
-  // Load UV bundle
+
   const bundleScript = document.createElement('script');
   bundleScript.src = '/uv/uv.bundle.js';
   bundleScript.async = false;
-  
+
   bundleScript.onload = () => {
     console.log('✅ UV bundle loaded');
-    
-    // Load UV config
+
     const configScript = document.createElement('script');
     configScript.src = '/uv/uv.config.js';
     configScript.async = false;
-    
+
     configScript.onload = () => {
       console.log('✅ UV config loaded');
       window.__uv$loading = false;
-      
-      // Set UV functions if available
+
       if (window.Ultraviolet && window.Ultraviolet.codec) {
         uvConfig.encodeUrl = Ultraviolet.codec.xor.encode;
         uvConfig.decodeUrl = Ultraviolet.codec.xor.decode;
-        
-        // Also set global config for UV service page
+
         window.__uv$config = {
-          prefix: '/uv/service/',
-          bare: '/bare/',
+          prefix: "/uv/service/",
+          bare: "https://uv.holyubofficial.net/bare/",
           encodeUrl: Ultraviolet.codec.xor.encode,
           decodeUrl: Ultraviolet.codec.xor.decode,
-          handler: '/uv/uv.handler.js',
-          bundle: '/uv/uv.bundle.js',
-          config: '/uv/uv.config.js',
-          client: '/uv/uv.client.js',
-          sw: '/uv/uv.sw.js'
+          handler: "/uv/uv.handler.js",
+          bundle: "/uv/uv.bundle.js",
+          config: "/uv/uv.config.js",
+          client: "/uv/uv.client.js",
+          sw: "/uv/uv.sw.js"
         };
       }
     };
-    
+
     configScript.onerror = () => {
       console.warn('⚠️ UV config failed');
       window.__uv$loading = false;
     };
-    
+
     document.head.appendChild(configScript);
   };
-  
+
   bundleScript.onerror = () => {
     console.error('❌ UV bundle failed');
     window.__uv$loading = false;
   };
-  
+
   document.head.appendChild(bundleScript);
 }
 
-// Check if UV is ready
 function isUVReady() {
-  return window.Ultraviolet && 
-         window.Ultraviolet.codec && 
-         uvConfig.encodeUrl && 
+  return window.Ultraviolet &&
+         window.Ultraviolet.codec &&
+         uvConfig.encodeUrl &&
          uvConfig.decodeUrl;
 }
 
-// Format URL
 function formatUrl(input) {
   input = input.trim();
   if (!input) return '';
-  
-  // Already a valid URL?
+
   try {
-    new URL(input);
-    return input;
+    return new URL(input).toString();
   } catch {
-    // Has dots? Assume domain
     if (input.includes('.') && !input.includes(' ')) {
       return 'https://' + input;
     }
-    // Otherwise search
     return 'https://www.google.com/search?q=' + encodeURIComponent(input);
   }
 }
 
-// Navigate
 function navigate() {
   const raw = urlInput.value.trim();
   if (!raw) return;
-  
+
   const url = formatUrl(raw);
   console.log('🌐 Target:', url);
-  
-  // Validate
+
   try {
     new URL(url);
   } catch {
     alert('Invalid URL');
     return;
   }
-  
-  // Update current tab
+
   if (currentTabId) {
     const tab = tabs.find(t => t.id === currentTabId);
     if (tab) {
@@ -155,53 +128,40 @@ function navigate() {
       updateTabDisplay(tab);
     }
   }
-  
-  // Navigate with UV
+
   navigateUV(url);
 }
 
-// Navigate using UV
 function navigateUV(url) {
   console.log('🔗 Using UV proxy...');
-  
-  // Check if UV is ready
+
   if (!isUVReady()) {
     console.warn('UV not ready, trying to load...');
     loadUV();
-    
-    // Try again in a moment
+
     setTimeout(() => {
       if (isUVReady()) {
         navigateUV(url);
       } else {
         alert('UV proxy is not ready. Please wait or try again.');
       }
-    }, 1000);
+    }, 1500);
     return;
   }
-  
+
   try {
-    // Encode with UV XOR
     const encoded = uvConfig.encodeUrl(url);
-    console.log('🔐 Encoded (first 50 chars):', encoded.substring(0, 50));
-    
-    // Build UV service URL
     const uvUrl = uvConfig.prefix + encoded;
-    console.log('📡 Loading UV URL');
-    
-    // Load in iframe
     iframe.src = uvUrl;
-    
   } catch (error) {
     console.error('❌ UV error:', error);
     alert('UV Error: ' + error.message);
   }
 }
 
-// Tab management (same as before)
 function createTab(url = 'about:blank') {
   const tabId = Date.now().toString();
-  
+
   const tabBtn = document.createElement('button');
   tabBtn.className = 'tab-btn';
   tabBtn.textContent = 'New Tab';
@@ -228,7 +188,7 @@ function createTab(url = 'about:blank') {
     url: url,
     title: 'New Tab'
   };
-  
+
   tabs.push(tab);
   switchTab(tabId);
   return tab;
@@ -239,7 +199,7 @@ function switchTab(tabId) {
   if (!tab) return;
 
   currentTabId = tabId;
-  
+
   if (tab.url !== 'about:blank') {
     if (isUVReady()) {
       try {
@@ -254,9 +214,9 @@ function switchTab(tabId) {
   } else {
     iframe.src = '';
   }
-  
+
   urlInput.value = tab.url === 'about:blank' ? '' : tab.url;
-  
+
   tabs.forEach(t => {
     t.button.classList.toggle('active', t.id === tabId);
     updateTabDisplay(t);
@@ -265,7 +225,7 @@ function switchTab(tabId) {
 
 function updateTabDisplay(tab) {
   let displayText = tab.title;
-  
+
   if (tab.url !== 'about:blank') {
     try {
       const urlObj = new URL(tab.url);
@@ -277,7 +237,7 @@ function updateTabDisplay(tab) {
       displayText = 'Web Page';
     }
   }
-  
+
   tab.button.textContent = displayText;
   tab.button.title = tab.url;
 }
@@ -311,21 +271,21 @@ function addQuickNav() {
     border-bottom: 1px solid #ddd;
     flex-wrap: wrap;
   `;
-  
+
   const sites = [
     { name: 'Google', url: 'https://www.google.com' },
     { name: 'YouTube', url: 'https://www.youtube.com' },
     { name: 'Wikipedia', url: 'https://www.wikipedia.org' },
     { name: 'GitHub', url: 'https://github.com' }
   ];
-  
+
   quickNav.innerHTML = `
     <span style="color: #666; font-size: 12px; padding: 6px 0;">Quick:</span>
-    ${sites.map(site => 
+    ${sites.map(site =>
       `<button onclick="quickNav('${site.url}')" style="padding: 6px 12px; background: white; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 13px;">${site.name}</button>`
     ).join('')}
   `;
-  
+
   const omnibox = document.querySelector('.omnibox');
   if (omnibox && omnibox.parentNode) {
     omnibox.parentNode.insertBefore(quickNav, omnibox.nextSibling);
@@ -337,9 +297,6 @@ function quickNav(url) {
   navigate();
 }
 
-// Initialize
 document.addEventListener('DOMContentLoaded', init);
-
-// Global functions
 window.quickNav = quickNav;
 window.navigate = navigate;
