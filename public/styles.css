@@ -1,3 +1,4 @@
+/* Global defaults */
 * {
   box-sizing: border-box;
   font-family: system-ui, sans-serif;
@@ -9,6 +10,7 @@ body {
   color: #e8ecff;
 }
 
+/* Top bar (header) */
 .topbar {
   display: flex;
   align-items: center;
@@ -22,9 +24,10 @@ body {
   font-size: 20px;
   font-weight: 800;
   color: #1f4fff;
-  text-shadow: 0 0 6px rgba(31,79,255,.6);
+  text-shadow: 0 0 6px rgba(31, 79, 255, 0.6);
 }
 
+/* Tabs container */
 .tabs {
   display: flex;
   gap: 6px;
@@ -32,7 +35,14 @@ body {
   overflow-x: auto;
 }
 
-.tab {
+/* Individual tab container */
+.tab-container {
+  display: flex;
+  align-items: center;
+}
+
+/* Tab button */
+.tab-btn {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -42,27 +52,33 @@ body {
   border: 1px solid #121a3a;
   cursor: pointer;
   white-space: nowrap;
+  color: #e8ecff;
+  font-size: 14px;
 }
 
-.tab.active {
+.tab-btn.active {
   border-color: #1f4fff;
-  box-shadow: 0 0 8px rgba(31,79,255,.6);
+  box-shadow: 0 0 8px rgba(31, 79, 255, 0.6);
 }
 
-.tab span {
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tab button {
+/* Close button inside tab */
+.close-btn {
   background: none;
   border: none;
   color: #e8ecff;
   font-weight: bold;
   cursor: pointer;
+  padding: 0 6px;
 }
 
+/* Tab title truncation */
+.tab-btn span {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Controls section (e.g., New Tab button) */
 .controls button {
   background: #1f4fff;
   border: none;
@@ -70,34 +86,62 @@ body {
   padding: 8px 12px;
   border-radius: 10px;
   cursor: pointer;
+  font-weight: 600;
 }
 
+/* Omnibox / URL input area */
 .omnibox {
   display: flex;
   padding: 10px;
   background: #0d1430;
 }
 
+/* Input field */
 .omnibox input {
   flex: 1;
   padding: 10px;
   background: #060b1a;
   border: 1px solid #121a3a;
   color: white;
+  border-radius: 4px;
+  font-size: 14px;
 }
 
+/* Go button */
 .omnibox button {
   margin-left: 8px;
   background: #1f4fff;
   border: none;
   color: white;
   padding: 10px 14px;
+  border-radius: 4px;
   cursor: pointer;
+  font-weight: bold;
 }
 
+/* Iframe for web content */
 iframe {
   width: 100%;
   height: calc(100vh - 110px);
   border: none;
   background: black;
+}
+
+/* Quick nav button styles (injected by JS) */
+.quick-nav {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #ddd;
+  flex-wrap: wrap;
+}
+
+.quick-nav button {
+  padding: 6px 12px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
 }
