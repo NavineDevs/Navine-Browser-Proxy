@@ -1,5 +1,3 @@
-/* global UVServiceWorker, __uv$config */
-
 importScripts("/uv/uv.bundle.js");
 importScripts("/uv/uv.config.js");
 
